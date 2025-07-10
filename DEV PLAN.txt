@@ -1,0 +1,20 @@
+Step 1: Strategic Discussion Audio Upload
+The user uploads an audio recording of their legal team's strategy discussion about the case, or records a new session directly in the app. The AI uses 11Labs transcription with advanced speaker identification to capture the collaborative thinking process, automatically identifying different team members and extracting the core strategic framework, potential arguments, and the team's approach to the case.
+Step 2: Case Information Input
+The user provides basic case details including the parties, court level, legal issues involved, and the specific constitutional question being addressed. They'll also indicate whether they're seeking cert or writing for a case already granted review, and specify their client/amicus party (like "Amish Bishops of New York" or "Religious Liberty Organizations").
+Step 3: Judge Profile Analysis
+The AI automatically analyzes the psychological profiles and judicial philosophies of all relevant judges who will hear the case. For Supreme Court cases, this includes detailed analysis of all nine justices' previous opinions, speeches, and decision patterns, identifying their values, preferred legal frameworks, and potential pressure points for persuasion.
+Step 4: Vehicle Assessment
+The user reviews AI-generated analysis of whether this case provides the "perfect vehicle" the court is seeking. The system evaluates the case's potential to overturn precedent (like Employment Division v. Smith), its optics for public perception, and whether it gives justices the tools they need to explain their decision to the broader legal community.
+Step 5: Historical Context Research
+The AI conducts comprehensive research into founding documents, historical precedents, and relevant stories from American history that support the legal arguments. Users can review and select from historical examples like conscientious objection to warfare, religious persecution in colonial times, or other foundational principles that parallel the current case.
+Step 6: Storytelling Integration
+The user selects specific human stories and concrete examples that will make the legal arguments emotionally resonant. This includes detailed narratives about the actual people affected (specific Amish families, individual circumstances) while connecting these stories to broader constitutional principles that protect everyone's freedoms.
+Step 7: Multi-Perspective Argument Crafting
+The AI generates arguments framed to appeal across ideological lines, ensuring the brief doesn't "scare" any justices by presenting religious liberty as protection for all minority viewpoints rather than just conservative Christian interests. Users review and refine language that builds bridges rather than creating defensive reactions.
+Step 8: Citation and Precedent Verification
+The system automatically verifies all citations, cross-references legal precedents, and ensures accuracy of quotes and case references. Multiple AI models cross-check each other to prevent hallucinations and false citations, with users able to trace every reference back to its original source.
+Step 9: Brief Structure and Drafting
+The AI generates the full brief structure with introduction, argument sections, and conclusion, incorporating all the research, stories, and strategic elements identified in previous steps. Users can edit and refine the draft while maintaining the strategic framework and judicial psychology insights.
+Step 10: Final Review and Optimization
+Users conduct final review with AI assistance to ensure the brief maintains consistent messaging, doesn't contain contradictions, and effectively balances legal argumentation with persuasive storytelling. The system provides a final assessment of how well the brief addresses each justice's likely concerns and interests.

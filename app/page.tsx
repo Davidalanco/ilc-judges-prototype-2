@@ -60,43 +60,63 @@ export default function Home() {
           </div>
 
           {/* Process Steps */}
-          <div className="mt-12 grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="mt-12 grid grid-cols-1 md:grid-cols-5 gap-6">
             <div className="text-center">
               <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Upload className="w-8 h-8 text-blue-600" />
               </div>
-              <h3 className="font-semibold text-gray-900">Upload Discussion</h3>
+              <h3 className="font-semibold text-gray-900">1. Audio Upload</h3>
               <p className="text-sm text-gray-600 mt-2">
-                Audio, video, or transcript of your strategy session
-              </p>
-            </div>
-            <div className="text-center">
-              <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Brain className="w-8 h-8 text-blue-600" />
-              </div>
-              <h3 className="font-semibold text-gray-900">AI Analysis</h3>
-              <p className="text-sm text-gray-600 mt-2">
-                Extract key issues and justice-specific strategies
+                Upload strategy discussion with speaker identification
               </p>
             </div>
             <div className="text-center">
               <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                 <FileText className="w-8 h-8 text-blue-600" />
               </div>
-              <h3 className="font-semibold text-gray-900">Draft Brief</h3>
+              <h3 className="font-semibold text-gray-900">2. Case Details</h3>
               <p className="text-sm text-gray-600 mt-2">
-                AI-powered writing with real-time persuasion scoring
+                Constitutional questions and court information
+              </p>
+            </div>
+            <div className="text-center">
+              <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Brain className="w-8 h-8 text-blue-600" />
+              </div>
+              <h3 className="font-semibold text-gray-900">3. Judge Analysis</h3>
+              <p className="text-sm text-gray-600 mt-2">
+                Psychological profiles and persuasion strategies
               </p>
             </div>
             <div className="text-center">
               <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Shield className="w-8 h-8 text-blue-600" />
               </div>
-              <h3 className="font-semibold text-gray-900">Opposition Intel</h3>
+              <h3 className="font-semibold text-gray-900">4. Research</h3>
               <p className="text-sm text-gray-600 mt-2">
-                Predict and prepare for counter-arguments
+                Historical context and precedent analysis
               </p>
             </div>
+            <div className="text-center">
+              <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircle className="w-8 h-8 text-blue-600" />
+              </div>
+              <h3 className="font-semibold text-gray-900">5. Brief Creation</h3>
+              <p className="text-sm text-gray-600 mt-2">
+                AI-generated brief with final review
+              </p>
+            </div>
+          </div>
+
+          {/* 10-Step Process Link */}
+          <div className="mt-12 text-center">
+            <a
+              href="/workflow"
+              className="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              View Complete 10-Step Process
+              <ArrowRight className="ml-2 w-5 h-5" />
+            </a>
           </div>
         </div>
       </section>

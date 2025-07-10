@@ -17,6 +17,12 @@ const Navigation = () => {
       description: 'Landing page with file upload'
     },
     {
+      name: '10-Step Workflow',
+      href: '/workflow',
+      icon: Target,
+      description: 'Complete brief creation process'
+    },
+    {
       name: 'Real Case Analysis',
       href: '/analysis/amish-vaccination-case',
       icon: Brain,

@@ -3,24 +3,38 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, X, Scale, Brain, FileText, Users, Target, AlertTriangle } from 'lucide-react'
+import { Menu, X, Scale, Brain, FileText, Users, Target, AlertTriangle, Shield, ArrowLeft } from 'lucide-react'
 
 const Navigation = () => {
   const [isOpen, setIsOpen] = useState(false)
   const pathname = usePathname()
 
-  const navigationItems = [
+  // Determine which app we're in
+  const isWorkflowApp = pathname.startsWith('/workflow')
+  
+  // Workflow App Navigation (Brief Creation Tool)
+  const workflowNavigationItems = [
+    {
+      name: 'Brief Workflow',
+      href: '/workflow',
+      icon: Shield,
+      description: 'Complete brief creation process'
+    },
+    {
+      name: '← Back to Platform',
+      href: '/',
+      icon: ArrowLeft,
+      description: 'Return to main platform'
+    }
+  ]
+
+  // Platform Showcase Navigation (Demo/Marketing)
+  const platformNavigationItems = [
     {
       name: 'Home',
       href: '/',
       icon: Scale,
       description: 'Landing page with file upload'
-    },
-    {
-      name: '10-Step Workflow',
-      href: '/workflow',
-      icon: Target,
-      description: 'Complete brief creation process'
     },
     {
       name: 'Real Case Analysis',
@@ -51,8 +65,17 @@ const Navigation = () => {
       href: '/risks',
       icon: AlertTriangle,
       description: 'Case risk factors and mitigation'
+    },
+    {
+      name: '📝 Working Tool',
+      href: '/workflow',
+      icon: Shield,
+      description: 'Go to actual brief creation workflow'
     }
   ]
+
+  // Choose navigation items based on current app
+  const navigationItems = isWorkflowApp ? workflowNavigationItems : platformNavigationItems
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/'
@@ -67,8 +90,10 @@ const Navigation = () => {
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
             <Link href="/" className="flex items-center">
-              <span className="text-2xl">⚖️</span>
-              <h1 className="ml-2 text-xl font-bold text-gray-900">Supreme Legal AI</h1>
+              <span className="text-2xl">{isWorkflowApp ? '📝' : '⚖️'}</span>
+              <h1 className="ml-2 text-xl font-bold text-gray-900">
+                {isWorkflowApp ? 'Brief Workflow Tool' : 'Supreme Legal AI'}
+              </h1>
             </Link>
 
             {/* Desktop Menu */}
@@ -134,7 +159,7 @@ const Navigation = () => {
         )}
       </nav>
 
-      {/* Navigation Helper - Only show on homepage */}
+      {/* Navigation Helper */}
       {pathname === '/' && (
         <div className="bg-blue-50 border-b">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -143,14 +168,38 @@ const Navigation = () => {
                 <div className="flex items-center">
                   <Brain className="w-5 h-5 text-blue-600 mr-2" />
                   <span className="text-sm font-medium text-blue-900">
-                    👆 Use the navigation above to explore different sections of the tool
+                    Choose between the Working Tool or Platform Showcase below
                   </span>
                 </div>
                 <Link
-                  href="/analysis/amish-vaccination-case"
+                  href="/workflow"
+                  className="bg-green-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-green-700 transition"
+                >
+                  Start Working Tool
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Workflow Tool Helper */}
+      {isWorkflowApp && (
+        <div className="bg-green-50 border-b">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <Shield className="w-5 h-5 text-green-600 mr-2" />
+                  <span className="text-sm font-medium text-green-900">
+                    📝 Brief Creation Workflow - Working with Miller v. McDonald case
+                  </span>
+                </div>
+                <Link
+                  href="/"
                   className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition"
                 >
-                  View Real Case Analysis
+                  ← Back to Platform
                 </Link>
               </div>
             </div>

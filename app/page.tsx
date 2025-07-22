@@ -108,26 +108,111 @@ export default function Home() {
             </div>
           </div>
 
-          {/* 10-Step Process Link */}
-          <div className="mt-12 text-center">
-            <a
-              href="/workflow"
-              className="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              View Complete 10-Step Process
-              <ArrowRight className="ml-2 w-5 h-5" />
-            </a>
+          {/* Two Application Options */}
+          <div className="mt-16 max-w-5xl mx-auto">
+            <div className="text-center mb-8">
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">Choose Your Path</h3>
+              <p className="text-gray-600">Two powerful tools for different needs</p>
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Working Tool */}
+              <div className="bg-white rounded-xl shadow-lg p-8 border-2 border-green-200">
+                <div className="text-center mb-6">
+                  <div className="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Shield className="w-8 h-8 text-green-600" />
+                  </div>
+                  <h4 className="text-xl font-bold text-gray-900 mb-2">📝 Brief Creation Workflow</h4>
+                  <p className="text-gray-600">The actual working tool for attorneys</p>
+                </div>
+                
+                <div className="space-y-3 mb-6">
+                  <div className="flex items-center text-sm text-gray-700">
+                    <CheckCircle className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" />
+                    11-step guided workflow process
+                  </div>
+                  <div className="flex items-center text-sm text-gray-700">
+                    <CheckCircle className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" />
+                    Real case data (Miller v. McDonald)
+                  </div>
+                  <div className="flex items-center text-sm text-gray-700">
+                    <CheckCircle className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" />
+                    Interactive brief editing & section management
+                  </div>
+                  <div className="flex items-center text-sm text-gray-700">
+                    <CheckCircle className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" />
+                    Voice input & AI content generation
+                  </div>
+                  <div className="flex items-center text-sm text-gray-700">
+                    <CheckCircle className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" />
+                    Constitutional analysis & shepardizing
+                  </div>
+                </div>
+                
+                <a
+                  href="/workflow"
+                  className="w-full bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors font-semibold text-center block"
+                >
+                  Start Working Tool →
+                </a>
+              </div>
+
+              {/* Demo/Showcase Platform */}
+              <div className="bg-white rounded-xl shadow-lg p-8 border-2 border-blue-200">
+                <div className="text-center mb-6">
+                  <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Brain className="w-8 h-8 text-blue-600" />
+                  </div>
+                  <h4 className="text-xl font-bold text-gray-900 mb-2">🎯 Platform Showcase</h4>
+                  <p className="text-gray-600">Explore features & capabilities</p>
+                </div>
+                
+                <div className="space-y-3 mb-6">
+                  <div className="flex items-center text-sm text-gray-700">
+                    <CheckCircle className="w-4 h-4 text-blue-500 mr-2 flex-shrink-0" />
+                    Justice psychological profiles
+                  </div>
+                  <div className="flex items-center text-sm text-gray-700">
+                    <CheckCircle className="w-4 h-4 text-blue-500 mr-2 flex-shrink-0" />
+                    Sample case analyses & examples
+                  </div>
+                  <div className="flex items-center text-sm text-gray-700">
+                    <CheckCircle className="w-4 h-4 text-blue-500 mr-2 flex-shrink-0" />
+                    Strategy workshop tools preview
+                  </div>
+                  <div className="flex items-center text-sm text-gray-700">
+                    <CheckCircle className="w-4 h-4 text-blue-500 mr-2 flex-shrink-0" />
+                    Risk assessment demonstrations
+                  </div>
+                  <div className="flex items-center text-sm text-gray-700">
+                    <CheckCircle className="w-4 h-4 text-blue-500 mr-2 flex-shrink-0" />
+                    Real case analysis results
+                  </div>
+                </div>
+                
+                <a
+                  href="/analysis/amish-vaccination-case"
+                  className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-semibold text-center block"
+                >
+                  Explore Platform →
+                </a>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* Upload Form */}
-      <section className="py-12">
+      {/* Upload Form - Demo Platform */}
+      <section className="py-12 bg-gray-100">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-8">
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">🎯 Platform Showcase Demo</h3>
+            <p className="text-gray-600">Try the file upload experience (demo version)</p>
+          </div>
           <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-lg p-8">
-            <h3 className="text-2xl font-bold text-gray-900 mb-6">
-              Start Your Brief
-            </h3>
+            <h4 className="text-xl font-bold text-gray-900 mb-6">
+              Upload Case for Demo Analysis
+            </h4>
 
             {/* File Upload */}
             <div className="mb-8">

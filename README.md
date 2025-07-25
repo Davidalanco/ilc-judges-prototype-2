@@ -23,13 +23,25 @@ open http://localhost:3000
 
 ## 📱 Features Demonstrated
 
+### 🎨 **Prototype Reference** (`/prototype`)
+- **VISUAL GUIDE**: Complete target design and functionality
+- All 11 workflow steps with detailed mock data
+- Justice analysis cards with alignment scores
+- Brief sections with AI chat interfaces
+- **Use this as design reference for all development!**
+
 ### 1. **Landing Page** (`/`)
 - Professional homepage with value proposition
 - Drag-and-drop file upload for attorney discussions
 - Case details form (name, type, deadline)
 - 4-step process visualization
 
-### 2. **AI Analysis Results** (`/analysis/[caseId]`)
+### 2. **Real Workflow** (`/workflow`)
+- Working implementation connecting to real APIs
+- Currently showing mock data (Week 2: connect to backend)
+- Reference `/prototype` for target design
+
+### 3. **AI Analysis Results** (`/analysis/[caseId]`)
 - Mock AI analysis of uploaded strategy session
 - Key legal issues identification with confidence scores
 - Justice-specific persuasion strategies and alignment scores

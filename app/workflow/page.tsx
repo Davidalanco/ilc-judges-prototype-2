@@ -737,7 +737,7 @@ export default function WorkflowPage() {
                                   <FileUpload 
                                     onUploadComplete={handleFileUploadComplete}
                                     acceptedTypes=".mp3,.wav,.m4a,.mp4,.mov,.webm"
-                                    maxSizeMB={1024} // 1GB
+                                    maxSizeMB={50} // 50MB (Supabase free tier limit)
                                     caseId="workflow-demo" // Add caseId for file organization
                                   />
 

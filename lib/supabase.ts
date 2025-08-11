@@ -54,7 +54,7 @@ export const uploadFile = async (
         const { data, error } = await supabaseAdmin.storage.createBucket(bucket, {
           public: true,
           allowedMimeTypes: ['audio/*', 'video/*', 'application/*', 'text/*', 'image/*'],
-          fileSizeLimit: 1024 * 1024 * 1024 // 1GB
+          fileSizeLimit: 50 * 1024 * 1024 // 50MB (Supabase free tier limit)
         });
         
         if (error) {

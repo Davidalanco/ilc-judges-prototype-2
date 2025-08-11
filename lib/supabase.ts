@@ -43,19 +43,39 @@ export const uploadFile = async (
     return { data: null, error: { message: 'Mock database - no actual upload' } };
   }
 
-  const uploadOptions: any = {
-    upsert: options?.upsert || false,
-    metadata: options?.metadata
-  };
-  
-  // Set content type if provided
-  if (options?.contentType) {
-    uploadOptions.contentType = options.contentType;
+  try {
+    // First, try to create the bucket if it doesn't exist
+    try {
+      await supabaseAdmin.storage.createBucket(bucket, {
+        public: true,
+        allowedMimeTypes: ['audio/*', 'video/*', 'application/*', 'text/*'],
+        fileSizeLimit: 1024 * 1024 * 1024 // 1GB
+      });
+      console.log(`Storage bucket '${bucket}' created successfully`);
+    } catch (bucketError: any) {
+      // Bucket might already exist, which is fine
+      if (bucketError.message && !bucketError.message.includes('already exists')) {
+        console.warn(`Bucket creation warning: ${bucketError.message}`);
+      }
+    }
+
+    const uploadOptions: any = {
+      upsert: options?.upsert || false,
+      metadata: options?.metadata
+    };
+    
+    // Set content type if provided
+    if (options?.contentType) {
+      uploadOptions.contentType = options.contentType;
+    }
+    
+    return await supabaseAdmin.storage
+      .from(bucket)
+      .upload(filePath, file, uploadOptions)
+  } catch (error) {
+    console.error('File upload error:', error);
+    return { data: null, error: { message: `Upload failed: ${error}` } };
   }
-  
-  return await supabaseAdmin.storage
-    .from(bucket)
-    .upload(filePath, file, uploadOptions)
 }
 
 export const downloadFile = async (

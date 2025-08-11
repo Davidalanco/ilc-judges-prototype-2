@@ -44,21 +44,37 @@ export const uploadFile = async (
   }
 
   try {
-    // First, try to create the bucket if it doesn't exist
-    try {
-      await supabaseAdmin.storage.createBucket(bucket, {
-        public: true,
-        allowedMimeTypes: ['audio/*', 'video/*', 'application/*', 'text/*'],
-        fileSizeLimit: 1024 * 1024 * 1024 // 1GB
-      });
-      console.log(`Storage bucket '${bucket}' created successfully`);
-    } catch (bucketError: any) {
-      // Bucket might already exist, which is fine
-      if (bucketError.message && !bucketError.message.includes('already exists')) {
-        console.warn(`Bucket creation warning: ${bucketError.message}`);
+    // First, check if the bucket exists
+    const { data: buckets } = await supabaseAdmin.storage.listBuckets();
+    const bucketExists = buckets?.some(b => b.name === bucket);
+    
+    if (!bucketExists) {
+      console.log(`Creating storage bucket '${bucket}'...`);
+      try {
+        const { data, error } = await supabaseAdmin.storage.createBucket(bucket, {
+          public: true,
+          allowedMimeTypes: ['audio/*', 'video/*', 'application/*', 'text/*', 'image/*'],
+          fileSizeLimit: 1024 * 1024 * 1024 // 1GB
+        });
+        
+        if (error) {
+          console.error('Bucket creation error:', error);
+          return { data: null, error: { message: `Bucket creation failed: ${error.message}` } };
+        }
+        
+        console.log(`Storage bucket '${bucket}' created successfully`);
+        
+        // Wait a moment for the bucket to be fully available
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } catch (bucketError: any) {
+        console.error('Bucket creation exception:', bucketError);
+        return { data: null, error: { message: `Bucket creation failed: ${bucketError.message}` } };
       }
+    } else {
+      console.log(`Storage bucket '${bucket}' already exists`);
     }
 
+    // Now try to upload the file
     const uploadOptions: any = {
       upsert: options?.upsert || false,
       metadata: options?.metadata
@@ -69,9 +85,18 @@ export const uploadFile = async (
       uploadOptions.contentType = options.contentType;
     }
     
-    return await supabaseAdmin.storage
+    console.log(`Uploading file to bucket '${bucket}'...`);
+    const result = await supabaseAdmin.storage
       .from(bucket)
-      .upload(filePath, file, uploadOptions)
+      .upload(filePath, file, uploadOptions);
+    
+    if (result.error) {
+      console.error('Upload error:', result.error);
+    } else {
+      console.log('File uploaded successfully');
+    }
+    
+    return result;
   } catch (error) {
     console.error('File upload error:', error);
     return { data: null, error: { message: `Upload failed: ${error}` } };

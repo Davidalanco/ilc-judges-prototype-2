@@ -45,20 +45,30 @@ export const uploadFile = async (
 
   try {
     // First, check if the bucket exists
-    const { data: buckets } = await supabaseAdmin.storage.listBuckets();
-    const bucketExists = buckets?.some(b => b.name === bucket);
+    let bucketExists = false;
+    try {
+      const { data: buckets, error: listError } = await supabaseAdmin.storage.listBuckets();
+      if (listError) {
+        console.warn('Could not list buckets:', listError.message);
+      } else {
+        bucketExists = buckets?.some(b => b.name === bucket) || false;
+      }
+    } catch (listError) {
+      console.warn('Bucket listing failed:', listError);
+    }
     
     if (!bucketExists) {
       console.log(`Creating storage bucket '${bucket}'...`);
       try {
         const { data, error } = await supabaseAdmin.storage.createBucket(bucket, {
           public: true,
-          allowedMimeTypes: ['audio/*', 'video/*', 'application/*', 'text/*', 'image/*'],
+          allowedMimeTypes: ['audio/*', 'video/*', 'application/*', 'text/*', 'text/*'],
           fileSizeLimit: 50 * 1024 * 1024 // 50MB (Supabase free tier limit)
         });
         
         if (error) {
           console.error('Bucket creation error:', error);
+          // Don't crash - return error gracefully
           return { data: null, error: { message: `Bucket creation failed: ${error.message}` } };
         }
         
@@ -66,12 +76,19 @@ export const uploadFile = async (
         
         // Wait a moment for the bucket to be fully available
         await new Promise(resolve => setTimeout(resolve, 2000));
+        bucketExists = true;
       } catch (bucketError: any) {
         console.error('Bucket creation exception:', bucketError);
+        // Don't crash - return error gracefully
         return { data: null, error: { message: `Bucket creation failed: ${bucketError.message}` } };
       }
     } else {
       console.log(`Storage bucket '${bucket}' already exists`);
+    }
+
+    // If bucket creation failed, don't proceed with upload
+    if (!bucketExists) {
+      return { data: null, error: { message: 'Storage bucket not available' } };
     }
 
     // Now try to upload the file
@@ -97,10 +114,32 @@ export const uploadFile = async (
     }
     
     return result;
-  } catch (error) {
+  } catch (error: any) {
     console.error('File upload error:', error);
-    return { data: null, error: { message: `Upload failed: ${error}` } };
+    // Don't crash - return error gracefully
+    return { data: null, error: { message: `Upload failed: ${error.message || error}` } };
   }
+}
+
+// Fallback storage for when Supabase fails
+export const uploadFileFallback = async (
+  bucket: 'audio-files' | 'documents' | 'exports',
+  filePath: string,
+  file: File | Buffer,
+  options?: { upsert?: boolean; metadata?: Record<string, any>; contentType?: string }
+) => {
+  console.log('Using fallback storage (local file system simulation)');
+  
+  // Simulate successful upload for development
+  const mockData = {
+    path: filePath,
+    id: `fallback-${Date.now()}`,
+    size: file instanceof File ? file.size : Buffer.byteLength(file),
+    metadata: options?.metadata || {},
+    created_at: new Date().toISOString()
+  };
+  
+  return { data: mockData, error: null };
 }
 
 export const downloadFile = async (

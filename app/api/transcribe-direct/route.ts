@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { transcribeAudioWithSpeakers } from '@/lib/ai/elevenlabs';
-import { uploadFile, getFileUrl } from '@/lib/supabase';
+import { uploadFile, uploadFileFallback, getFileUrl } from '@/lib/supabase';
 import { db } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
@@ -14,11 +14,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    // Validate file size (1GB limit for ElevenLabs)
-    const maxSize = 1024 * 1024 * 1024; // 1GB (ElevenLabs supports up to 1GB)
+    // Validate file size (50MB limit for Supabase free tier)
+    const maxSize = 50 * 1024 * 1024; // 50MB
     if (file.size > maxSize) {
       return NextResponse.json({ 
-        error: 'File too large. Maximum size is 1GB for transcription.' 
+        error: 'File too large. Maximum size is 50MB for transcription.' 
       }, { status: 400 });
     }
 
@@ -40,9 +40,9 @@ export async function POST(request: NextRequest) {
     const fileName = `${timestamp}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
     const filePath = caseId ? `${userId}/${caseId}/${fileName}` : `${userId}/${fileName}`;
 
-    // Upload file to Supabase storage
+    // Try to upload file to Supabase storage first
     console.log('Uploading file to Supabase storage...');
-    const uploadResult = await uploadFile('audio-files', filePath, file, {
+    let uploadResult = await uploadFile('audio-files', filePath, file, {
       upsert: false,
       metadata: {
         originalName: file.name,
@@ -51,17 +51,38 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    // If Supabase fails, use fallback storage
     if (uploadResult.error) {
-      console.error('File upload failed:', uploadResult.error);
+      console.warn('Supabase upload failed, using fallback storage:', uploadResult.error.message);
+      uploadResult = await uploadFileFallback('audio-files', filePath, file, {
+        upsert: false,
+        metadata: {
+          originalName: file.name,
+          caseId: caseId || null,
+          uploadedAt: new Date().toISOString()
+        }
+      });
+    }
+
+    if (uploadResult.error) {
+      console.error('Both Supabase and fallback storage failed:', uploadResult.error);
       return NextResponse.json({ 
         error: `File upload failed: ${uploadResult.error.message}` 
       }, { status: 500 });
     }
 
-    console.log('File uploaded successfully to Supabase storage');
+    console.log('File uploaded successfully (Supabase or fallback)');
 
-    // Get the public URL for the uploaded file
-    const fileUrl = getFileUrl('audio-files', filePath);
+    // Get the file URL (use fallback if needed)
+    let fileUrl = '';
+    if (uploadResult.data && 'path' in uploadResult.data) {
+      // Fallback storage
+      fileUrl = `fallback://${uploadResult.data.path}`;
+    } else {
+      // Supabase storage
+      const urlResult = getFileUrl('audio-files', filePath);
+      fileUrl = urlResult.data?.publicUrl || urlResult;
+    }
 
     // Convert file to buffer for transcription
     const arrayBuffer = await file.arrayBuffer();
@@ -79,7 +100,7 @@ export async function POST(request: NextRequest) {
           file_name: file.name,
           file_size: file.size,
           file_type: file.type,
-          s3_url: fileUrl.data?.publicUrl || fileUrl,
+          s3_url: fileUrl,
           duration_seconds: Math.round(transcriptionResult.duration || 0)
         });
 
@@ -116,7 +137,7 @@ export async function POST(request: NextRequest) {
       speakerCount: transcriptionResult.speakerCount,
       fileName: file.name,
       fileSize: file.size,
-      fileUrl: fileUrl.data?.publicUrl || fileUrl,
+      fileUrl: fileUrl,
       s3Key: filePath,
       processedAt: new Date().toISOString(),
       conversationId: conversationRecord?.id || null

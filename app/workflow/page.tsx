@@ -510,6 +510,32 @@ export default function WorkflowPage() {
     }
   };
 
+  // Add navigation functions
+  const goToStep = (stepNumber: number) => {
+    setCurrentStep(stepNumber);
+    setExpandedStep(stepNumber);
+  };
+
+  const goBack = () => {
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
+      setExpandedStep(currentStep - 1);
+    }
+  };
+
+  const goForward = () => {
+    if (currentStep < steps.length) {
+      setCurrentStep(currentStep + 1);
+      setExpandedStep(currentStep + 1);
+    }
+  };
+
+  const canGoBack = currentStep > 1;
+  const canGoForward = currentStep < steps.length;
+  const isStepEditable = (stepNumber: number) => {
+    return completedSteps.includes(stepNumber) || stepNumber === currentStep;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
       {/* Header */}
@@ -563,6 +589,37 @@ export default function WorkflowPage() {
                 <div className="text-sm text-gray-600 font-medium">
                   {completedSteps.length} of {steps.length} steps completed
                 </div>
+              </div>
+              
+              {/* Navigation Controls */}
+              <div className="flex items-center justify-between mb-4">
+                <button
+                  onClick={goBack}
+                  disabled={!canGoBack}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    canGoBack
+                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      : 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  ← Previous Step
+                </button>
+                
+                <div className="text-sm text-gray-600">
+                  Step {currentStep} of {steps.length}
+                </div>
+                
+                <button
+                  onClick={goForward}
+                  disabled={!canGoForward}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    canGoForward
+                      ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                      : 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  Next Step →
+                </button>
               </div>
               
               <div className="flex items-center space-x-2 mb-4">
@@ -643,6 +700,19 @@ export default function WorkflowPage() {
                           )}
                         </div>
                       </div>
+                      
+                      {/* Edit button for completed steps */}
+                      {completedSteps.includes(step.id) && (
+                        <div className="mt-2">
+                          <button
+                            onClick={() => goToStep(step.id)}
+                            className="inline-flex items-center px-3 py-1 bg-green-100 text-green-700 text-xs rounded-full hover:bg-green-200 transition-colors"
+                          >
+                            <Edit3 className="w-3 h-3 mr-1" />
+                            Edit Step
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {isExpanded && (
@@ -653,37 +723,84 @@ export default function WorkflowPage() {
                           {/* Step-specific UI components with real data */}
                           {step.id === 1 && (
                             <div className="space-y-4">
-                              <div className="bg-white rounded-lg p-4">
-                                <h4 className="font-semibold mb-3">Audio Analysis: Strategy Session</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <div>
-                                    <div className="border-2 border-dashed border-green-300 rounded-lg p-6 text-center bg-green-50">
-                                      <Upload className="w-8 h-8 mx-auto mb-2 text-green-500" />
-                                      <p className="text-sm text-green-700">{step.mockData.file}</p>
-                                      <p className="text-xs text-green-600 mt-1">Duration: {step.mockData.duration}</p>
+                              {step.id === currentStep ? (
+                                // Show FileUpload for current step
+                                <div className="space-y-6">
+                                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                    <h3 className="font-semibold text-blue-900 mb-2">Upload Attorney Strategy Session</h3>
+                                    <p className="text-blue-700 text-sm">
+                                      Upload audio recordings of your legal team's strategy discussions. Our AI will transcribe 
+                                      and identify key constitutional arguments, precedents, and strategic approaches.
+                                    </p>
+                                  </div>
+
+                                  <FileUpload 
+                                    onUploadComplete={handleFileUploadComplete}
+                                    acceptedTypes=".mp3,.wav,.m4a,.mp4,.mov,.webm"
+                                    maxSizeMB={1024} // 1GB
+                                    caseId="workflow-demo" // Add caseId for file organization
+                                  />
+
+                                  {uploadedFileData && (
+                                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                                      <h4 className="font-semibold text-green-900 mb-2">✓ Transcription Complete</h4>
+                                      <div className="text-sm text-green-700 space-y-1">
+                                        <p><strong>File:</strong> {uploadedFileData.fileName}</p>
+                                        <p><strong>Duration:</strong> {uploadedFileData.duration}</p>
+                                        <p><strong>Language:</strong> {uploadedFileData.language}</p>
+                                        <p><strong>Speakers Identified:</strong> {uploadedFileData.speakerCount}</p>
+                                        {uploadedFileData.s3Key && (
+                                          <p><strong>File Saved:</strong> ✓ Yes (Supabase Storage)</p>
+                                        )}
+                                        {uploadedFileData.conversationId && (
+                                          <p><strong>Database Record:</strong> ✓ Yes</p>
+                                        )}
+                                      </div>
+                                      <div className="mt-4">
+                                        <button
+                                          onClick={() => handleStepComplete(1)}
+                                          className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
+                                        >
+                                          Continue to Step 2 <ChevronRight className="w-4 h-4 ml-1 inline" />
+                                        </button>
+                                      </div>
                                     </div>
-                                    <div className="mt-4 text-center">
-                                      <div className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                                        {step.mockData.status}
+                                  )}
+                                </div>
+                              ) : (
+                                // Show mock data for completed step
+                                <div className="bg-white rounded-lg p-4">
+                                  <h4 className="font-semibold mb-3">Audio Analysis: Strategy Session</h4>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                      <div className="border-2 border-dashed border-green-300 rounded-lg p-6 text-center bg-green-50">
+                                        <Upload className="w-8 h-8 mx-auto mb-2 text-green-500" />
+                                        <p className="text-sm text-green-700">{step.mockData.file}</p>
+                                        <p className="text-xs text-green-600 mt-1">Duration: {step.mockData.duration}</p>
+                                      </div>
+                                      <div className="mt-4 text-center">
+                                        <div className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                                          {step.mockData.status}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="space-y-3">
+                                      <div className="text-sm">
+                                        <strong>Speakers Identified:</strong> {step.mockData?.speakers?.length || 0}
+                                      </div>
+                                      <div className="text-sm">
+                                        <strong>Transcription Quality:</strong> {step.mockData?.transcriptionQuality || 0}%
+                                      </div>
+                                      <div className="text-sm">
+                                        <strong>Key Topics:</strong> {step.mockData?.keyTopics?.join(", ") || ""}
+                                      </div>
+                                      <div className="text-sm">
+                                        <strong>Tone:</strong> {step.mockData.emotionalTone}
                                       </div>
                                     </div>
                                   </div>
-                                  <div className="space-y-3">
-                                    <div className="text-sm">
-                                      <strong>Speakers Identified:</strong> {step.mockData?.speakers?.length || 0}
-                                    </div>
-                                    <div className="text-sm">
-                                      <strong>Transcription Quality:</strong> {step.mockData?.transcriptionQuality || 0}%
-                                    </div>
-                                    <div className="text-sm">
-                                      <strong>Key Topics:</strong> {step.mockData?.keyTopics?.join(", ") || ""}
-                                    </div>
-                                    <div className="text-sm">
-                                      <strong>Tone:</strong> {step.mockData.emotionalTone}
-                                    </div>
-                                  </div>
                                 </div>
-                              </div>
+                              )}
                             </div>
                           )}
 

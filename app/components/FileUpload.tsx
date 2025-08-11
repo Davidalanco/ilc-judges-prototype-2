@@ -14,11 +14,14 @@ interface FileUploadProps {
     language?: string;
     speakers?: any[];
     speakerCount?: number;
+    s3Key?: string;
+    conversationId?: string;
   }) => void;
   onUploadError?: (error: string) => void;
   acceptedTypes?: string;
   maxSizeMB?: number;
   className?: string;
+  caseId?: string; // Add caseId prop for organizing files
 }
 
 interface UploadProgress {
@@ -35,7 +38,8 @@ export default function FileUpload({
   onUploadError,
   acceptedTypes = '.mp3,.wav,.m4a,.mp4,.mov,.webm',
   maxSizeMB = 50,
-  className = ''
+  className = '',
+  caseId
 }: FileUploadProps) {
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -92,6 +96,9 @@ export default function FileUpload({
       // Create form data for server-side upload
       const formData = new FormData();
       formData.append('file', file);
+      if (caseId) {
+        formData.append('caseId', caseId);
+      }
 
       // Send directly to transcription API with animated progress
       let progressValue = 30;
@@ -154,7 +161,9 @@ export default function FileUpload({
           transcription: transcriptionData.transcription,
           language: transcriptionData.language,
           speakers: transcriptionData.speakers || [],
-          speakerCount: transcriptionData.speakerCount || 0
+          speakerCount: transcriptionData.speakerCount || 0,
+          s3Key: transcriptionData.s3Key,
+          conversationId: transcriptionData.conversationId
         });
       }
 

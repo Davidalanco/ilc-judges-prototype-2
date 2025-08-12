@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { conversationId } = await request.json();
+    const { conversationId, forceReprocess } = await request.json();
 
     if (!conversationId) {
       return NextResponse.json({ error: 'Conversation ID required' }, { status: 400 });
@@ -81,7 +81,11 @@ export async function POST(request: NextRequest) {
       transcript_quality: 95, // Placeholder, could be calculated based on transcription confidence
       speaker_count: transcriptionResult.speakerCount,
       speakers: transcriptionResult.speakers || [],
-      analysis: analysisResult,
+      analysis: {
+        ...analysisResult,
+        segments: transcriptionResult.segments || [], // Ensure segments are stored
+        speakers: transcriptionResult.speakers || []
+      },
       key_issues: analysisResult.keyIssues || [],
       status: 'transcribed'
     });
@@ -101,6 +105,7 @@ export async function POST(request: NextRequest) {
       language: transcriptionResult.language,
       speakerCount: transcriptionResult.speakerCount,
       speakers: transcriptionResult.speakers,
+      segments: transcriptionResult.segments || [], // Include segments in response
       message: 'Transcription and analysis complete'
     });
 

@@ -423,12 +423,110 @@ export interface SearchResults {
   errors: string[];
 }
 
-class CourtListenerAPI {
+export class CourtListenerAPI {
   private baseUrl = COURTLISTENER_BASE_URL;
   private lastRequestTime = 0;
   private minInterval = 1000; // 1 second between requests
   private retryAttempts = 3;
   private apiToken = process.env.COURTLISTENER_API_TOKEN;
+
+  // V4 Search API - Modern search endpoint (more powerful than v3)
+  async searchV4(query: string, options: {
+    type?: 'o' | 'r' | 'rd' | 'd' | 'p' | 'oa';
+    limit?: number;
+    status?: string;
+  } = {}): Promise<any> {
+    console.log(`Using V4 Search API for: "${query}"`);
+    
+    const params = new URLSearchParams();
+    params.append('q', query);
+    
+    // Set search type (default to 'o' for case law opinions)
+    params.append('type', options.type || 'o');
+    
+    // Set limit (default 20)
+    if (options.limit) {
+      params.append('limit', options.limit.toString());
+    }
+    
+    // Include unpublished cases if needed
+    if (options.status) {
+      params.append('status', options.status);
+    }
+    
+    params.append('format', 'json');
+
+    const headers: Record<string, string> = {
+      'User-Agent': 'Legal Research Tool/1.0 (Educational Use)',
+      'Accept': 'application/json',
+    };
+
+    if (this.apiToken) {
+      headers['Authorization'] = `Token ${this.apiToken}`;
+    }
+
+    try {
+      const response = await fetch(`https://www.courtlistener.com/api/rest/v4/search/?${params.toString()}`, {
+        method: 'GET',
+        headers
+      });
+
+      if (!response.ok) {
+        throw new Error(`V4 Search API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log(`V4 Search API response: Found ${data.count} total results, returned ${data.results?.length} results`);
+      
+      return data;
+    } catch (error) {
+      console.error('V4 Search API error:', error);
+      throw error;
+    }
+  }
+
+  // New Citation Lookup API (April 2024) - more accurate for specific citations
+  async lookupCitation(citation: string): Promise<CourtListenerCluster[]> {
+    console.log(`Using Citation Lookup API for: "${citation}"`);
+    
+    const headers: Record<string, string> = {
+      'User-Agent': 'Legal Research Tool/1.0 (Educational Use)',
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    };
+
+    if (this.apiToken) {
+      headers['Authorization'] = `Token ${this.apiToken}`;
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/citation-lookup/`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ text: citation })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Citation Lookup API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log(`Citation Lookup API response:`, data);
+      
+      // Extract clusters from all citation results
+      const clusters: CourtListenerCluster[] = [];
+      for (const result of data) {
+        if (result.status === 200 && result.clusters) {
+          clusters.push(...result.clusters);
+        }
+      }
+      
+      return clusters;
+    } catch (error) {
+      console.error('Citation Lookup API error:', error);
+      throw error;
+    }
+  }
 
   private async makeRequest(url: string, attempt = 1): Promise<Response> {
     // Rate limiting: ensure minimum interval between requests
@@ -474,6 +572,23 @@ class CourtListenerAPI {
   async searchOpinions(query: CitationSearchQuery, limit = 20): Promise<CourtListenerCluster[]> {
     const params = new URLSearchParams();
     
+    // Add date range based on citation format to improve search results
+    if (query.citation && query.citation.includes('F.3d')) {
+      // F.3d cases are typically from 1993-present
+      // 944 F.3d would be around 2019-2020
+      const volume = parseInt(query.citation.split(' ')[0]);
+      if (volume > 900) {
+        params.append('date_filed__gte', '2019-01-01');
+        params.append('date_filed__lte', '2021-12-31');
+      } else if (volume > 800) {
+        params.append('date_filed__gte', '2015-01-01');
+        params.append('date_filed__lte', '2020-12-31');
+      } else if (volume > 500) {
+        params.append('date_filed__gte', '2005-01-01');
+        params.append('date_filed__lte', '2018-12-31');
+      }
+    }
+    
     if (query.caseName) {
       params.append('case_name', query.caseName);
     }
@@ -494,6 +609,11 @@ class CourtListenerAPI {
     if (query.yearStart && query.yearEnd) {
       params.append('date_filed__gte', `${query.yearStart}-01-01`);
       params.append('date_filed__lte', `${query.yearEnd}-12-31`);
+    }
+    
+    // Add precedential status if specified (for filtering published vs unpublished opinions)
+    if ((query as any).precedential_status) {
+      params.append('precedential_status', (query as any).precedential_status);
     }
     
     params.append('limit', limit.toString());
@@ -539,6 +659,70 @@ class CourtListenerAPI {
     } catch (error) {
       console.error('CourtListener opinion text error:', error);
       return '';
+    }
+  }
+
+  // Enhanced search to prioritize cases with actual content
+  async searchWithContentPriority(query: string, options: {
+    type?: 'o' | 'r' | 'rd' | 'd' | 'p' | 'oa';
+    limit?: number;
+    status?: string;
+  } = {}): Promise<any> {
+    console.log(`Searching for cases with content priority: "${query}"`);
+    
+    const params = new URLSearchParams();
+    params.append('q', query);
+    params.append('type', options.type || 'o');
+    params.append('limit', (options.limit || 20).toString());
+    params.append('status', options.status || 'Published');
+    params.append('format', 'json');
+
+    const headers: Record<string, string> = {
+      'User-Agent': 'Legal Research Tool/1.0 (Educational Use)',
+      'Accept': 'application/json',
+    };
+
+    if (this.apiToken) {
+      headers['Authorization'] = `Token ${this.apiToken}`;
+    }
+
+    try {
+      const response = await fetch(`https://www.courtlistener.com/api/rest/v4/search/?${params.toString()}`, {
+        method: 'GET',
+        headers
+      });
+
+      if (!response.ok) {
+        throw new Error(`V4 Search API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Filter and prioritize results that have snippets (indicating content availability)
+      const resultsWithContent = data.results.filter((result: any) => 
+        result.snippet && result.snippet.length > 100
+      );
+      
+      const resultsWithoutContent = data.results.filter((result: any) => 
+        !result.snippet || result.snippet.length <= 100
+      );
+
+      console.log(`Found ${resultsWithContent.length} cases with content, ${resultsWithoutContent.length} without content`);
+      
+      // Return prioritized results (content first, then others)
+      return {
+        ...data,
+        results: [...resultsWithContent, ...resultsWithoutContent],
+        contentStats: {
+          withContent: resultsWithContent.length,
+          withoutContent: resultsWithoutContent.length,
+          total: data.results.length
+        }
+      };
+
+    } catch (error) {
+      console.error('Content-priority search error:', error);
+      throw error;
     }
   }
 
@@ -711,23 +895,188 @@ class CourtListenerAPI {
 }
 
 // Main search function
-export async function searchCaseDocuments(citation: ParsedCitation): Promise<SearchResults> {
+export async function searchCaseDocuments(citation: ParsedCitation, searchMode: 'exact' | 'related' | 'comprehensive' = 'exact'): Promise<SearchResults> {
   const api = new CourtListenerAPI();
   const documents: CaseDocument[] = [];
   const errors: string[] = [];
   let totalFound = 0;
 
-  console.log(`Searching CourtListener for: "${citation.fullCitation}"`);
+  console.log(`Searching CourtListener for: "${citation.fullCitation}" with mode: ${searchMode}`);
 
-  // Generate multiple search strategies - try different approaches
+  // STEP 1: Try the V4 Search API first (most modern and comprehensive)
+  try {
+    console.log(`Step 1: Using V4 Search API for ${searchMode} search`);
+    
+    // Different search strategies based on search mode
+    let v4Strategies: Array<{query: string, name: string}> = [];
+    
+    if (searchMode === 'exact') {
+      // Only exact match strategies
+      v4Strategies = [
+        // Exact citation search with quotes
+        { query: `"${citation.fullCitation}"`, name: 'exact_citation_quoted' },
+        // Citation components with quotes
+        ...(citation.isValid ? [{ 
+          query: `"${citation.volume} ${citation.reporter} ${citation.page}"`, 
+          name: 'exact_citation_parts' 
+        }] : []),
+        // Exact case name
+        { query: `caseName:"${citation.caseName}"`, name: 'exact_case_name' }
+      ];
+    } else if (searchMode === 'related') {
+      // Related cases strategy
+      v4Strategies = [
+        // Start with exact, then broaden
+        { query: `"${citation.fullCitation}"`, name: 'exact_citation' },
+        // Case name without quotes for similar cases
+        { query: citation.caseName, name: 'related_case_name' },
+        // Just the parties for similar disputes
+        ...(citation.caseName.includes(' v. ') ? [{ 
+          query: citation.caseName.split(' v. ')[0], 
+          name: 'plaintiff_cases' 
+        }] : []),
+        // Legal issues context
+        ...(citation.isValid ? [{ 
+          query: `${citation.reporter} ${citation.caseName.split(' v. ')[0]}`, 
+          name: 'similar_court_cases' 
+        }] : [])
+      ];
+    } else if (searchMode === 'comprehensive') {
+      // Comprehensive search - all strategies
+      v4Strategies = [
+        // Exact matches first
+        { query: `"${citation.fullCitation}"`, name: 'exact_citation' },
+        // Citation without quotes
+        { query: citation.fullCitation, name: 'citation_unquoted' },
+        // Citation components
+        ...(citation.isValid ? [{ 
+          query: `${citation.volume} ${citation.reporter} ${citation.page}`, 
+          name: 'citation_parts' 
+        }] : []),
+        // Case name variations
+        { query: `caseName:"${citation.caseName}"`, name: 'case_name_field' },
+        { query: citation.caseName, name: 'case_name_general' },
+        // Broader searches
+        ...(citation.caseName.includes(' v. ') ? [
+          { query: citation.caseName.split(' v. ')[0], name: 'plaintiff_name' },
+          { query: citation.caseName.split(' v. ')[1], name: 'defendant_name' }
+        ] : [])
+      ];
+    }
+
+    for (const strategy of v4Strategies) {
+      try {
+        console.log(`Trying V4 strategy: ${strategy.name} - "${strategy.query}"`);
+        
+        const v4Results = await api.searchV4(strategy.query, { 
+          type: 'o', // Case law opinions
+          limit: 20,
+          status: 'Published' // Include published cases
+        });
+        
+        if (v4Results.results && v4Results.results.length > 0) {
+          console.log(`V4 Search found ${v4Results.results.length} results with strategy: ${strategy.name}`);
+          
+          // Convert V4 results to our document format
+          for (const result of v4Results.results) {
+            documents.push({
+              id: `cl-v4-${result.cluster_id}`,
+              type: 'decision',
+              title: `${result.caseName} - ${result.court}`,
+              court: result.court || 'Unknown Court',
+              docketNumber: result.docketNumber || `cluster-${result.cluster_id}`,
+              date: result.dateFiled || 'Unknown Date',
+              pageCount: 0,
+              source: 'courtlistener',
+              downloadUrl: result.absolute_url || '',
+              plainText: result.snippet || '',
+              authors: result.judge ? [result.judge] : [],
+              isSelected: false
+            });
+          }
+          
+          totalFound = v4Results.count || v4Results.results.length;
+          
+          return {
+            documents: documents.slice(0, 20),
+            totalFound,
+            searchQueries: [{ citation: strategy.query }],
+            errors: []
+          };
+        }
+      } catch (strategyError) {
+        console.error(`V4 strategy ${strategy.name} failed:`, strategyError);
+        errors.push(`V4 search strategy "${strategy.name}" failed: ${strategyError instanceof Error ? strategyError.message : 'Unknown error'}`);
+      }
+    }
+    
+    console.log(`V4 Search API found no results for any strategy`);
+    
+  } catch (error) {
+    console.error('V4 Search API failed:', error);
+    errors.push(`V4 search failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+
+  // STEP 2: Try the Citation Lookup API as backup
+  try {
+    console.log(`Step 2: Using Citation Lookup API for exact citation`);
+    const lookupClusters = await api.lookupCitation(citation.fullCitation);
+    
+    if (lookupClusters.length > 0) {
+      console.log(`Citation Lookup API found ${lookupClusters.length} clusters - using these results`);
+      
+      for (const cluster of lookupClusters) {
+        const clusterDocs = api['clusterToDocuments'](cluster);
+        documents.push(...clusterDocs);
+      }
+      
+      totalFound = lookupClusters.length;
+      
+      return {
+        documents: documents.slice(0, 20),
+        totalFound,
+        searchQueries: [{ citation: citation.fullCitation }],
+        errors: []
+      };
+    } else {
+      console.log(`Citation Lookup API found no results for "${citation.fullCitation}"`);
+      errors.push(`Exact citation "${citation.fullCitation}" not found in CourtListener database`);
+    }
+  } catch (error) {
+    console.error('Citation Lookup API failed:', error);
+    errors.push(`Citation lookup failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+
+  // STEP 3: Fallback to traditional search strategies
+  console.log(`Step 3: Falling back to traditional search methods`);
+  
+  // Enhanced search strategies based on CourtListener API documentation
   const searchQueries = [
-    // 1. Try exact citation first (most specific)
-    ...(citation.isValid ? [{ citation: `${citation.volume} ${citation.reporter} ${citation.page}` }] : []),
-    // 2. Try federal_cite_one field specifically  
-    ...(citation.isValid ? [{ federal_cite_one: `${citation.volume} ${citation.reporter} ${citation.page}` }] : []),
-    // 3. Try broader citation search with different formats
-    ...(citation.isValid ? [{ citation: `${citation.volume} ${citation.reporter.replace('.', '')} ${citation.page}` }] : []),
-    // 4. Try case name only (will get more results)
+    // 1. Try exact citation with proper field mapping
+    ...(citation.isValid ? [{ 
+      citation: `${citation.volume} ${citation.reporter} ${citation.page}`,
+      federal_cite_one: `${citation.volume} ${citation.reporter} ${citation.page}`
+    }] : []),
+    
+    // 2. Try with different citation format variations
+    ...(citation.isValid ? [{ 
+      citation: `${citation.volume} ${citation.reporter.replace(/\./g, '')} ${citation.page}` 
+    }] : []),
+    
+    // 3. Try case name with more specific filtering
+    { 
+      caseName: citation.caseName,
+      // Add precedential status filter to get published opinions first
+      precedential_status: 'Published'
+    },
+    
+    // 4. Broader case name search (first word only)
+    { 
+      caseName: citation.caseName.split(' ')[0],
+      precedential_status: 'Published'
+    },
+    
+    // 5. Try without any filters as fallback
     { caseName: citation.caseName }
   ];
 
@@ -796,7 +1145,7 @@ export async function searchCaseDocuments(citation: ParsedCitation): Promise<Sea
     }
   }
 
-  // If still no results, show helpful message
+  // If still no results, provide helpful message
   if (documents.length === 0) {
     errors.push(`No results found for "${citation.fullCitation}". This case may not be in CourtListener's database.`);
   }

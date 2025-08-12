@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Search, Edit, Trash2, Play, FileText, Clock, Users, Download } from 'lucide-react';
+import SpeakerTranscriptDisplay from './SpeakerTranscriptDisplay';
 
 interface Transcription {
   id: string;
@@ -11,9 +12,12 @@ interface Transcription {
   file_type: string;
   duration_seconds: number;
   transcript: string;
+  transcription_text?: string; // Database field name
   speaker_count: number;
   speakers: any[];
+  segments?: any[]; // Transcript segments with speaker data
   analysis: any;
+  analysis_result?: any; // Database field name
   transcript_quality: number;
   conversation_type: string;
   processing_status: string;
@@ -95,7 +99,7 @@ export default function TranscriptionManager({ onSelectTranscription }: Transcri
 
   const handleEdit = (transcription: Transcription) => {
     setSelectedTranscription(transcription);
-    setEditedTranscript(transcription.transcript);
+    setEditedTranscript(transcription.transcript || transcription.transcription_text || '');
     setIsEditMode(true);
   };
 
@@ -120,11 +124,11 @@ export default function TranscriptionManager({ onSelectTranscription }: Transcri
         setTranscriptions(prev => 
           prev.map(t => 
             t.id === selectedTranscription.id 
-              ? { ...t, transcript: editedTranscript }
+              ? { ...t, transcript: editedTranscript, transcription_text: editedTranscript }
               : t
           )
         );
-        setSelectedTranscription({ ...selectedTranscription, transcript: editedTranscript });
+        setSelectedTranscription({ ...selectedTranscription, transcript: editedTranscript, transcription_text: editedTranscript });
         setIsEditMode(false);
       } else {
         setError('Failed to update transcription');
@@ -308,58 +312,48 @@ export default function TranscriptionManager({ onSelectTranscription }: Transcri
                 </div>
 
                 <div className="border-t pt-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="font-medium">Transcript:</span>
-                    {isEditMode && (
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={handleSaveEdit}
-                          className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => {
-                            setIsEditMode(false);
-                            setEditedTranscript(selectedTranscription.transcript);
-                          }}
-                          className="px-3 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  
                   {isEditMode ? (
-                    <textarea
-                      value={editedTranscript}
-                      onChange={(e) => setEditedTranscript(e.target.value)}
-                      className="w-full h-64 p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Enter transcript text..."
-                    />
+                    <>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="font-medium">Edit Transcript:</span>
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={handleSaveEdit}
+                            className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsEditMode(false);
+                              setEditedTranscript(selectedTranscription.transcript || selectedTranscription.transcription_text || '');
+                            }}
+                            className="px-3 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                      <textarea
+                        value={editedTranscript}
+                        onChange={(e) => setEditedTranscript(e.target.value)}
+                        className="w-full h-64 p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Enter transcript text..."
+                      />
+                    </>
                   ) : (
-                    <div className="max-h-64 overflow-y-auto bg-gray-50 p-3 rounded-lg text-sm">
-                      <p className="whitespace-pre-wrap">{selectedTranscription.transcript}</p>
-                    </div>
+                    <SpeakerTranscriptDisplay
+                      segments={selectedTranscription.segments || (selectedTranscription.analysis_result?.segments)}
+                      speakers={selectedTranscription.speakers || (selectedTranscription.analysis_result?.speakers) || []}
+                      transcription={selectedTranscription.transcript || selectedTranscription.transcription_text || ''}
+                      showTimestamps={true}
+                      showSpeakerStats={true}
+                      maxHeight="max-h-64"
+                    />
                   )}
                 </div>
 
-                {selectedTranscription.speakers && selectedTranscription.speakers.length > 0 && (
-                  <div className="border-t pt-4 mt-4">
-                    <span className="font-medium">Speakers:</span>
-                    <div className="mt-2 space-y-2">
-                      {selectedTranscription.speakers.map((speaker, index) => (
-                        <div key={index} className="flex items-center justify-between text-sm">
-                          <span>{speaker.name || `Speaker ${index + 1}`}</span>
-                          <span className="text-gray-500">
-                            Confidence: {(speaker.confidence * 100).toFixed(0)}%
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+
               </div>
             </>
           ) : (

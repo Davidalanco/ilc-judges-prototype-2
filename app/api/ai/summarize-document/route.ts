@@ -24,15 +24,24 @@ export async function POST(request: NextRequest) {
     const getPrompt = (type: string, doc: any) => {
       const baseContext = `Document: ${doc.title}\nCourt: ${doc.court}\nDate: ${doc.date}\nPages: ${doc.pageCount}`;
       
+      // Include full text if available, otherwise note the limitation
+      const documentText = doc.fullText || doc.plainText || '';
+      const hasRealContent = documentText && documentText.length > 100 && 
+                           !documentText.includes('Document content not available');
+      
+      const textSection = hasRealContent
+        ? `\n\nFull Document Text:\n${documentText.substring(0, 12000)}${documentText.length > 12000 ? '...[TRUNCATED]' : ''}`
+        : `\n\nNote: This appears to be a real case (${doc.title}) but the full text is not available in CourtListener's free database. Providing educational analysis based on typical legal patterns for this type of case.`;
+      
       switch (type) {
         case 'decision':
-          return `${baseContext}\n\nAs a legal expert, analyze this circuit court decision and provide a structured summary with:\n\n1. Key legal holdings and reasoning\n2. Legal standard applied (e.g., strict scrutiny, rational basis)\n3. Case disposition (affirmed, reversed, remanded)\n4. Notable quotes from the opinion\n5. Important cited cases and precedents\n6. Significance for future constitutional law cases\n\nProvide concise but comprehensive analysis suitable for Supreme Court brief preparation.`;
+          return `${baseContext}${textSection}\n\nAs a legal expert, analyze this circuit court decision and provide a structured summary with:\n\n1. Key legal holdings and reasoning\n2. Legal standard applied (e.g., strict scrutiny, rational basis)\n3. Case disposition (affirmed, reversed, remanded)\n4. Notable quotes from the opinion\n5. Important cited cases and precedents\n6. Significance for future constitutional law cases\n\nProvide concise but comprehensive analysis suitable for Supreme Court brief preparation.`;
 
         case 'dissent':
-          return `${baseContext}\n\nAs a legal expert, analyze this dissenting opinion and provide a structured summary with:\n\n1. Main points of disagreement with majority\n2. Alternative legal reasoning proposed\n3. Critique of majority's constitutional analysis\n4. Notable quotes from the dissent\n5. Cases cited to support dissenting view\n6. Potential influence on future Supreme Court review\n\nFocus on constitutional arguments that might appeal to different judicial philosophies.`;
+          return `${baseContext}${textSection}\n\nAs a legal expert, analyze this dissenting opinion and provide a structured summary with:\n\n1. Main points of disagreement with majority\n2. Alternative legal reasoning proposed\n3. Critique of majority's constitutional analysis\n4. Notable quotes from the dissent\n5. Cases cited to support dissenting view\n6. Potential influence on future Supreme Court review\n\nFocus on constitutional arguments that might appeal to different judicial philosophies.`;
 
         default:
-          return `${baseContext}\n\nAs a legal expert, analyze this legal document and provide a structured summary with:\n\n1. Key factual and legal content\n2. Relevance to constitutional law analysis\n3. Important procedural or substantive information\n4. Notable quotes or citations\n5. Significance for case understanding\n\nProvide analysis suitable for Supreme Court brief preparation.`;
+          return `${baseContext}${textSection}\n\nAs a legal expert, analyze this legal document and provide a structured summary with:\n\n1. Key factual and legal content\n2. Relevance to constitutional law analysis\n3. Important procedural or substantive information\n4. Notable quotes or citations\n5. Significance for case understanding\n\nProvide analysis suitable for Supreme Court brief preparation.`;
       }
     };
 
@@ -41,7 +50,7 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: "system",
-          content: "You are an expert constitutional law clerk preparing comprehensive case summaries for Supreme Court brief writing. Provide detailed, structured analysis focusing on constitutional principles, judicial reasoning, and strategic insights."
+          content: "You are an expert constitutional law clerk preparing comprehensive case summaries for Supreme Court brief writing. When full case text is available, provide detailed analysis based on the actual content. When only metadata is available (common with CourtListener's free database), provide educational analysis based on typical legal patterns for that type of case and court level, while clearly noting the limitation."
         },
         {
           role: "user",

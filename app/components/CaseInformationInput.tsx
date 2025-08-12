@@ -72,8 +72,25 @@ export default function CaseInformationInput({
       setConstitutionalQuestion(initialCaseInfo.constitutionalQuestion || '');
       setPenalties(initialCaseInfo.penalties || '');
       setTargetPrecedent(initialCaseInfo.targetPrecedent || '');
+      
+      // Mark as analyzed since we have data from database
+      setHasAnalyzed(true);
+      console.log('✅ Form populated from database - marking as analyzed');
     }
   }, [initialCaseInfo]);
+  
+  // Additional effect to handle when initialCaseInfo changes
+  useEffect(() => {
+    if (initialCaseInfo && !hasAnalyzed) {
+      console.log('📋 Received case info update - populating form');
+      setCaseName(initialCaseInfo.caseName || '');
+      setCourtLevel(initialCaseInfo.courtLevel || '');
+      setConstitutionalQuestion(initialCaseInfo.constitutionalQuestion || '');
+      setPenalties(initialCaseInfo.penalties || '');
+      setTargetPrecedent(initialCaseInfo.targetPrecedent || '');
+      setHasAnalyzed(true);
+    }
+  }, [initialCaseInfo, hasAnalyzed]);
 
   const saveCaseInformation = async (analysisData: any, targetCaseId: string) => {
     try {

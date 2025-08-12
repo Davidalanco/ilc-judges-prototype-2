@@ -130,14 +130,7 @@ export async function transcribeAudioWithSpeakers(audioBuffer: Buffer, fileName:
       if (uniqueSpeakers.size > 0) {
         console.log('✅ Real speakers detected from ElevenLabs API!');
         
-        const speakers = Array.from(uniqueSpeakers).map((speakerId: any, index: number) => ({
-          id: speakerId,
-          name: `Speaker ${index + 1}`,
-          confidence: 0.95, // High confidence for API-provided speakers
-          segments: segments.filter(seg => seg.speaker === speakerId).length
-        }));
-        
-        // Create segments based on speaker changes
+        // Create segments based on speaker changes first
         const segments: any[] = [];
         let currentSegment: any = null;
         
@@ -168,6 +161,16 @@ export async function transcribeAudioWithSpeakers(audioBuffer: Buffer, fileName:
         if (currentSegment) {
           segments.push(currentSegment);
         }
+        
+        // Now create speakers array with correct segment counts
+        const speakers = Array.from(uniqueSpeakers).map((speakerId: any, index: number) => ({
+          id: speakerId,
+          name: `Speaker ${index + 1}`,
+          confidence: 0.95, // High confidence for API-provided speakers
+          segments: segments.filter(seg => seg.speaker === speakerId).length
+        }));
+        
+        console.log(`🎯 Created ${segments.length} segments for ${speakers.length} speakers`);
         
         return {
           text: transcriptionData.text,

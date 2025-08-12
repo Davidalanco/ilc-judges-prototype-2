@@ -346,6 +346,14 @@ export default function WorkflowPage() {
   const [forceRender, setForceRender] = useState(0);
   const [caseInformation, setCaseInformation] = useState<any>(null);
 
+  // Always load case information from database when caseId is available
+  useEffect(() => {
+    if (currentCaseId && currentCaseId !== 'null' && currentCaseId !== 'undefined') {
+      console.log('💾 Loading case information from database for current case:', currentCaseId);
+      loadCaseInformation(currentCaseId);
+    }
+  }, [currentCaseId]);
+
   // Force re-render when uploadedFileData changes
   useEffect(() => {
     if (uploadedFileData) {
@@ -417,6 +425,13 @@ export default function WorkflowPage() {
           // Also load case information to ensure it's available
           console.log('📋 Loading case information for persistence');
           await loadCaseInformation(savedCaseId);
+          
+                  // Force a refresh of case information to ensure it's current
+        console.log('🔄 Force refresh case information after load');
+        setTimeout(() => {
+          console.log('🔄 Delayed case information refresh');
+          loadCaseInformation(savedCaseId);
+        }, 1000); // Small delay to ensure component is fully mounted
         } else {
           console.log('📭 No valid case ID found - skipping transcription load');
         }
@@ -514,15 +529,44 @@ export default function WorkflowPage() {
             targetPrecedent: data.case.precedent_target || ''
           };
           
-          setCaseInformation(caseInfo);
-          console.log('✅ Case information loaded from database:', caseInfo);
-          debugLog.success('Workflow', 'Case information loaded from database', { caseId, hasData: Object.values(caseInfo).some(v => v) });
+          // Only update if we have meaningful data
+          const hasData = Object.values(caseInfo).some(v => v && v.trim() !== '');
+          if (hasData) {
+            setCaseInformation(caseInfo);
+            console.log('✅ Case information loaded from database:', caseInfo);
+            debugLog.success('Workflow', 'Case information loaded from database', { caseId, hasData });
+            
+            // Save to localStorage as backup
+            localStorage.setItem(`case_information_${caseId}`, JSON.stringify(caseInfo));
+          } else {
+            console.log('⚠️ Case information exists but is empty - skipping update');
+          }
         }
       } else {
-        console.log('⚠️ Failed to load case information from database');
+        console.log('⚠️ Failed to load case information from database - response not ok');
+        
+        // Try loading from localStorage as fallback
+        const fallbackData = localStorage.getItem(`case_information_${caseId}`);
+        if (fallbackData) {
+          const caseInfo = JSON.parse(fallbackData);
+          setCaseInformation(caseInfo);
+          console.log('📂 Loaded case information from localStorage fallback:', caseInfo);
+        }
       }
     } catch (error) {
       console.error('❌ Error loading case information:', error);
+      
+      // Try loading from localStorage as fallback
+      try {
+        const fallbackData = localStorage.getItem(`case_information_${caseId}`);
+        if (fallbackData) {
+          const caseInfo = JSON.parse(fallbackData);
+          setCaseInformation(caseInfo);
+          console.log('📂 Loaded case information from localStorage fallback after error:', caseInfo);
+        }
+      } catch (fallbackError) {
+        console.error('❌ Fallback loading also failed:', fallbackError);
+      }
     }
   };
 

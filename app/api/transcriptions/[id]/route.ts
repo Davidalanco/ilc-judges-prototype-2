@@ -62,6 +62,7 @@ export async function PUT(
     const { 
       transcript, 
       speakers, 
+      segments,
       speaker_count,
       key_issues,
       strategic_elements,
@@ -82,6 +83,7 @@ export async function PUT(
     // Build analysis_result object
     const analysisUpdates: any = {};
     if (speakers !== undefined) analysisUpdates.speakers = speakers;
+    if (segments !== undefined) analysisUpdates.segments = segments;
     if (speaker_count !== undefined) analysisUpdates.speaker_count = speaker_count;
     if (key_issues !== undefined) analysisUpdates.key_topics = key_issues;
     

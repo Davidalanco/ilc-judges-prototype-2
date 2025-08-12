@@ -394,6 +394,334 @@ export const db = {
     
     if (error) throw error;
     return data;
+  },
+
+  // Legal Research Functions
+  
+  // Research Sessions
+  async createResearchSession(sessionData: {
+    case_id: string;
+    user_id: string;
+    session_name?: string;
+    description?: string;
+  }) {
+    const { data, error } = await supabase
+      .from('research_sessions')
+      .insert({
+        case_id: sessionData.case_id,
+        user_id: sessionData.user_id,
+        session_name: sessionData.session_name || `Research Session ${new Date().toLocaleDateString()}`,
+        description: sessionData.description || null,
+        status: 'active'
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async getResearchSessionsByCase(caseId: string) {
+    const { data, error } = await supabase
+      .from('research_sessions')
+      .select('*')
+      .eq('case_id', caseId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async updateResearchSession(id: string, updates: Partial<{
+    session_name: string;
+    description: string;
+    status: string;
+  }>) {
+    const { data, error } = await supabase
+      .from('research_sessions')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Legal Documents
+  async createLegalDocument(documentData: {
+    research_session_id: string;
+    case_id: string;
+    external_id?: string;
+    source_system: string;
+    document_type: string;
+    citation: string;
+    case_title: string;
+    court?: string;
+    docket_number?: string;
+    decision_date?: string;
+    page_count?: number;
+    has_plain_text?: boolean;
+    download_url?: string;
+    authors?: string[];
+    parties?: any;
+    legal_issues?: string[];
+    search_query?: string;
+    relevance_score?: number;
+  }) {
+    const { data, error } = await supabase
+      .from('legal_documents')
+      .insert(documentData)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async getLegalDocumentsBySession(sessionId: string) {
+    const { data, error } = await supabase
+      .from('legal_documents')
+      .select('*')
+      .eq('research_session_id', sessionId)
+      .order('relevance_score', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async getLegalDocumentsByCase(caseId: string) {
+    const { data, error } = await supabase
+      .from('legal_documents')
+      .select('*')
+      .eq('case_id', caseId)
+      .order('relevance_score', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async updateLegalDocument(id: string, updates: Partial<{
+    relevance_score: number;
+    is_selected: boolean;
+    local_file_path: string;
+    has_plain_text: boolean;
+  }>) {
+    const { data, error } = await supabase
+      .from('legal_documents')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async bulkUpdateDocumentSelection(documentIds: string[], isSelected: boolean) {
+    const { data, error } = await supabase
+      .from('legal_documents')
+      .update({ is_selected: isSelected })
+      .in('id', documentIds)
+      .select();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Document Summaries
+  async createDocumentSummary(summaryData: {
+    document_id: string;
+    summary_type: string;
+    ai_model?: string;
+    key_points?: string[];
+    legal_standard?: string;
+    disposition?: string;
+    notable_quotes?: string[];
+    cited_cases?: string[];
+    holding?: string;
+    reasoning?: string;
+    precedent_value?: string;
+    ai_summary?: string;
+    confidence_score?: number;
+  }) {
+    const { data, error } = await supabase
+      .from('document_summaries')
+      .insert(summaryData)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async getDocumentSummary(documentId: string, summaryType: string = 'detailed') {
+    const { data, error } = await supabase
+      .from('document_summaries')
+      .select('*')
+      .eq('document_id', documentId)
+      .eq('summary_type', summaryType)
+      .single();
+    
+    if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows found
+    return data;
+  },
+
+  async updateDocumentSummary(id: string, updates: Partial<{
+    key_points: string[];
+    legal_standard: string;
+    disposition: string;
+    notable_quotes: string[];
+    cited_cases: string[];
+    holding: string;
+    reasoning: string;
+    precedent_value: string;
+    ai_summary: string;
+    confidence_score: number;
+  }>) {
+    const { data, error } = await supabase
+      .from('document_summaries')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Research Notes
+  async createResearchNote(noteData: {
+    user_id: string;
+    case_id: string;
+    document_id?: string;
+    research_session_id: string;
+    note_type: string;
+    title?: string;
+    content: string;
+    tags?: string[];
+    page_references?: string[];
+    quote_text?: string;
+  }) {
+    const { data, error } = await supabase
+      .from('research_notes')
+      .insert(noteData)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async getResearchNotesByCase(caseId: string) {
+    const { data, error } = await supabase
+      .from('research_notes')
+      .select('*')
+      .eq('case_id', caseId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async updateResearchNote(id: string, updates: Partial<{
+    title: string;
+    content: string;
+    tags: string[];
+    page_references: string[];
+    quote_text: string;
+  }>) {
+    const { data, error } = await supabase
+      .from('research_notes')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Saved Searches
+  async createSavedSearch(searchData: {
+    user_id: string;
+    case_id?: string;
+    search_name: string;
+    search_query: string;
+    search_parameters?: any;
+    is_favorite?: boolean;
+  }) {
+    const { data, error } = await supabase
+      .from('saved_searches')
+      .insert(searchData)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async getSavedSearchesByUser(userId: string) {
+    const { data, error } = await supabase
+      .from('saved_searches')
+      .select('*')
+      .eq('user_id', userId)
+      .order('is_favorite', { ascending: false })
+      .order('updated_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async updateSavedSearch(id: string, updates: Partial<{
+    search_name: string;
+    search_query: string;
+    search_parameters: any;
+    last_run_at: string;
+    results_count: number;
+    is_favorite: boolean;
+  }>) {
+    const { data, error } = await supabase
+      .from('saved_searches')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Citation Relationships
+  async createCitationRelationship(relationshipData: {
+    citing_document_id: string;
+    cited_document_id: string;
+    relationship_type: string;
+    context?: string;
+    page_number?: number;
+  }) {
+    const { data, error } = await supabase
+      .from('citation_relationships')
+      .insert(relationshipData)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async getCitationRelationships(documentId: string) {
+    const { data, error } = await supabase
+      .from('citation_relationships')
+      .select(`
+        *,
+        citing_document:legal_documents!citing_document_id(*),
+        cited_document:legal_documents!cited_document_id(*)
+      `)
+      .or(`citing_document_id.eq.${documentId},cited_document_id.eq.${documentId}`);
+    
+    if (error) throw error;
+    return data;
   }
 };
 

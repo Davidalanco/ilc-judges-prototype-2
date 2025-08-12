@@ -292,6 +292,34 @@ export async function POST(request: NextRequest) {
             transcriptLength: transcriptionResult.text?.length || 0,
             speakerCount: transcriptionResult.speakerCount || 0
           });
+
+          // Automatically extract and update case information from transcript
+          try {
+            const { extractCaseInformation } = await import('@/lib/ai/case-analyzer');
+            const caseInfo = await extractCaseInformation(transcriptionResult.text);
+            
+            // Update the case with extracted information
+            await db.updateCase(actualCaseId, {
+              case_name: caseInfo.case_name,
+              court_level: caseInfo.court_level,
+              constitutional_question: caseInfo.constitutional_question,
+              penalties: caseInfo.penalties,
+              precedent_target: caseInfo.precedent_target
+            });
+            
+            logDbOp('TranscribeDirect', 'Case information automatically extracted and updated', {
+              caseId: actualCaseId,
+              caseName: caseInfo.case_name,
+              courtLevel: caseInfo.court_level,
+              extractedFields: Object.keys(caseInfo).length
+            });
+          } catch (caseAnalysisError) {
+            logError('TranscribeDirect', 'Failed to automatically extract case information', {
+              error: caseAnalysisError instanceof Error ? caseAnalysisError.message : 'Unknown error',
+              caseId: actualCaseId
+            });
+            // Continue without case information extraction
+          }
         }
       } catch (dbError) {
         logError('TranscribeDirect', 'Database storage failed', { 

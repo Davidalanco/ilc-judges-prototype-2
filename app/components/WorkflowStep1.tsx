@@ -311,7 +311,7 @@ export default function WorkflowStep1({ caseId, onTranscriptionComplete, isCompl
       hasTranscription: !!data.transcription,
       transcriptionLength: data.transcription?.length,
       conversationId: data.conversationId,
-      caseId: caseId
+      caseId: data.caseId
     });
     
     onTranscriptionComplete(data); // Pass to parent

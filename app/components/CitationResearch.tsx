@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, CheckSquare, Square, FileText, Users, Clock, AlertCircle, CheckCircle, Eye, X, BookOpen, Scale, Download } from 'lucide-react';
 
 interface CaseDocument {
@@ -56,13 +56,30 @@ interface CitationResearchProps {
 }
 
 export default function CitationResearch({ onDocumentsSelected, onSummariesGenerated }: CitationResearchProps) {
-  const [citation, setCitation] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
   const [selectedDocuments, setSelectedDocuments] = useState<Set<string>>(new Set());
   const [isGeneratingSummaries, setIsGeneratingSummaries] = useState(false);
   const [previewDocument, setPreviewDocument] = useState<CaseDocument | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [searchMode, setSearchMode] = useState<'exact' | 'related' | 'comprehensive'>('comprehensive');
+  const [searchType, setSearchType] = useState<'citation' | 'keywords'>('keywords');
+  const [isRealTimeSearch, setIsRealTimeSearch] = useState(true);
+  const [showHelp, setShowHelp] = useState(false);
+
+  // Debounced search for real-time filtering
+  useEffect(() => {
+    if (!isRealTimeSearch || !searchQuery.trim() || searchQuery.length < 3) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      performSearch();
+    }, 500); // 500ms delay after user stops typing
+
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery, searchMode, searchType, isRealTimeSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Enhanced AI summary generation
   const generateDocumentSummary = async (doc: CaseDocument): Promise<DocumentSummary> => {
@@ -134,10 +151,13 @@ export default function CitationResearch({ onDocumentsSelected, onSummariesGener
       
       if (response.ok) {
         const data = await response.json();
-        const updatedDoc = { 
+        const docWithContent = { 
           ...doc, 
-          fullText: data.fullText || 'Document content not available',
-          summary: data.summary || await generateDocumentSummary(doc)
+          fullText: data.fullText || 'Document content not available'
+        };
+        const updatedDoc = { 
+          ...docWithContent,
+          summary: data.summary || await generateDocumentSummary(docWithContent)
         };
         setPreviewDocument(updatedDoc);
       } else {
@@ -228,31 +248,40 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
     }
   };
 
-  const searchCitation = async () => {
-    if (!citation.trim()) return;
+  const performSearch = async () => {
+    if (!searchQuery.trim()) return;
 
-    // Validate citation format before searching
-    const citationText = citation.trim();
+    const queryText = searchQuery.trim();
     
-    // Basic validation: should contain case name, volume, and page
-    const hasBasicFormat = citationText.includes('v.') && 
-                          /\d+/.test(citationText) && // Has numbers
-                          citationText.length > 10; // Reasonable length
-    
-    if (!hasBasicFormat) {
-      alert('Please enter a complete legal citation (e.g., "Miller v. McDonald, 944 F.3d 1050")');
-      return;
+    // Auto-detect search type if not explicitly set
+    let actualSearchType = searchType;
+    if (searchType === 'keywords') {
+      // Auto-detect if it looks like a citation
+      const looksLikeCitation = queryText.includes('v.') && 
+                               /\d+/.test(queryText) && 
+                               queryText.length > 10;
+      if (looksLikeCitation) {
+        actualSearchType = 'citation';
+      }
     }
 
     setIsSearching(true);
     try {
-      // For now, use free APIs directly while professional APIs are being set up
-      const response = await fetch('/api/legal/research-citation', {
+      // Use different endpoints based on search type
+      const endpoint = actualSearchType === 'citation' 
+        ? '/api/legal/research-citation'
+        : '/api/legal/research-keywords';
+      
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ citation: citationText }),
+        body: JSON.stringify({ 
+          query: queryText,
+          searchMode: searchMode,
+          searchType: actualSearchType
+        }),
       });
 
       if (response.ok) {
@@ -280,7 +309,7 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
         
         // Show error in UI
         setSearchResults({
-          citation: { original: citation, parsed: { caseName: '', reporter: '', volume: '', page: '', isValid: false } },
+          citation: { original: searchQuery, parsed: { caseName: '', reporter: '', volume: '', page: '', isValid: false } },
           documents: [],
           summary: { totalFound: 0, documentsReturned: 0, searchQueries: [], errors: [errorMessage] }
         });
@@ -288,13 +317,18 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
     } catch (error) {
       console.error('Search failed:', error);
       setSearchResults({
-        citation: { original: citation, parsed: { caseName: '', reporter: '', volume: '', page: '', isValid: false } },
+        citation: { original: searchQuery, parsed: { caseName: '', reporter: '', volume: '', page: '', isValid: false } },
         documents: [],
         summary: { totalFound: 0, documentsReturned: 0, searchQueries: [], errors: ['Network error'] }
       });
     } finally {
       setIsSearching(false);
     }
+  };
+
+  // Manual search trigger (for button clicks)
+  const triggerSearch = () => {
+    performSearch();
   };
 
   const toggleDocumentSelection = (documentId: string) => {
@@ -325,6 +359,40 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
     if (onDocumentsSelected) {
       const selected = searchResults.documents.filter(doc => newSelected.has(doc.id));
       onDocumentsSelected(selected);
+    }
+  };
+
+  const selectNoneByType = (type: string) => {
+    if (!searchResults) return;
+    
+    const typeDocuments = searchResults.documents.filter(doc => doc.type === type);
+    const newSelected = new Set(selectedDocuments);
+    
+    typeDocuments.forEach(doc => newSelected.delete(doc.id));
+    setSelectedDocuments(newSelected);
+    
+    if (onDocumentsSelected) {
+      const selected = searchResults.documents.filter(doc => newSelected.has(doc.id));
+      onDocumentsSelected(selected);
+    }
+  };
+
+  const selectAllDocuments = () => {
+    if (!searchResults) return;
+    
+    const allDocumentIds = new Set(searchResults.documents.map(doc => doc.id));
+    setSelectedDocuments(allDocumentIds);
+    
+    if (onDocumentsSelected) {
+      onDocumentsSelected(searchResults.documents);
+    }
+  };
+
+  const selectNoneDocuments = () => {
+    setSelectedDocuments(new Set());
+    
+    if (onDocumentsSelected) {
+      onDocumentsSelected([]);
     }
   };
 
@@ -379,24 +447,88 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
           <h3 className="text-lg font-semibold text-gray-900">Legal Citation Research</h3>
         </div>
         
+        {/* Compact Search Interface */}
         <div className="space-y-4">
-          <div>
-            <label htmlFor="citation" className="block text-sm font-medium text-gray-700 mb-2">
-              Enter Case Citation
-            </label>
+          {/* Main Search Bar with Integrated Options */}
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+            
+            {/* Search Type Toggle - Compact */}
+            <div className="flex items-center space-x-6 mb-3">
+              <label className="flex items-center space-x-2">
+                <input
+                  type="radio"
+                  name="searchType"
+                  value="keywords"
+                  checked={searchType === 'keywords'}
+                  onChange={(e) => setSearchType(e.target.value as any)}
+                  className="text-blue-600"
+                />
+                <span className="text-sm font-medium text-gray-700">🔍 Keywords</span>
+              </label>
+              <label className="flex items-center space-x-2">
+                <input
+                  type="radio"
+                  name="searchType"
+                  value="citation"
+                  checked={searchType === 'citation'}
+                  onChange={(e) => setSearchType(e.target.value as any)}
+                  className="text-blue-600"
+                />
+                <span className="text-sm font-medium text-gray-700">📚 Citations</span>
+              </label>
+              
+              {/* Help Tooltip */}
+              <div className="ml-auto">
+                <button 
+                  type="button"
+                  className="text-blue-500 hover:text-blue-700 text-sm font-medium flex items-center space-x-1"
+                  title="Click for search help and examples"
+                  onClick={() => setShowHelp(!showHelp)}
+                >
+                  <span>💡 Help</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Search Input with Integrated Controls */}
             <div className="flex space-x-3">
-              <input
-                type="text"
-                id="citation"
-                value={citation}
-                onChange={(e) => setCitation(e.target.value)}
-                placeholder="e.g., Miller v. McDonald, 944 F.3d 1050"
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  id="searchQuery"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={
+                    searchType === 'keywords' 
+                      ? "e.g., religious freedom, Miller, constitutional law..."
+                      : "e.g., Miller v. McDonald, 944 F.3d 1050"
+                  }
+                  className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+                />
+                {isRealTimeSearch && searchQuery.length >= 3 && (
+                  <div className="absolute right-3 top-3.5 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                    Live
+                  </div>
+                )}
+              </div>
+              
+              {/* Search Mode Dropdown */}
+              <div className="relative">
+                <select
+                  value={searchMode}
+                  onChange={(e) => setSearchMode(e.target.value as any)}
+                  className="px-3 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm"
+                >
+                  <option value="exact">🎯 Exact</option>
+                  <option value="related">🔗 Related</option>
+                  <option value="comprehensive">📚 Broad</option>
+                </select>
+              </div>
+
               <button
-                onClick={searchCitation}
-                disabled={isSearching || !citation.trim()}
-                className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-2"
+                onClick={triggerSearch}
+                disabled={isSearching || !searchQuery.trim()}
+                className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-2"
               >
                 {isSearching ? (
                   <>
@@ -406,238 +538,284 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
                 ) : (
                   <>
                     <Search className="w-4 h-4" />
-                    <span>Find Documents</span>
+                    <span>Search</span>
                   </>
                 )}
               </button>
             </div>
+
+            {/* Compact Options Row */}
+            <div className="flex items-center justify-between mt-3 text-sm">
+              <label className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={isRealTimeSearch}
+                  onChange={(e) => setIsRealTimeSearch(e.target.checked)}
+                  className="text-blue-600"
+                />
+                <span className="text-gray-600">⚡ Real-time search</span>
+              </label>
+              
+              <div className="text-gray-500">
+                {searchQuery.length >= 3 ? (
+                  <span className="text-green-600">✓ Ready to search</span>
+                ) : (
+                  <span>Type 3+ characters</span>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="text-sm text-gray-600">
-            <p><strong>Supported formats:</strong></p>
-            <ul className="list-disc list-inside space-y-1 mt-1">
-              <li>Case Name, Volume Reporter Page (e.g., "Miller v. McDonald, 944 F.3d 1050")</li>
-              <li>Case Name, Volume Reporter Page (Year) (e.g., "Roe v. Wade, 410 U.S. 113 (1973)")</li>
-            </ul>
-          </div>
+          {/* Collapsible Help Section */}
+          {showHelp && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-semibold text-blue-900 flex items-center">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
+                  How to Use Legal Research
+                </h4>
+                <button 
+                  onClick={() => setShowHelp(false)}
+                  className="text-blue-600 hover:text-blue-800"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              
+              <div className="grid md:grid-cols-2 gap-4 text-sm text-blue-800">
+                {/* Left Column - Examples */}
+                <div>
+                  <div className="mb-3">
+                    <strong>
+                      {searchType === 'keywords' ? '🔍 Keyword Examples:' : '📚 Citation Examples:'}
+                    </strong>
+                    <div className="mt-1 space-y-1">
+                      {searchType === 'keywords' ? (
+                        <>
+                          <div className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">religious freedom</div>
+                          <div className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">constitutional law</div>
+                          <div className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">Supreme Court</div>
+                          <div className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">civil rights</div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">Brown v. Board, 347 U.S. 483</div>
+                          <div className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">Roe v. Wade, 410 U.S. 113</div>
+                          <div className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">Miranda v. Arizona, 384 U.S. 436</div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="mb-3">
+                    <strong>🎯 Search Modes:</strong>
+                    <ul className="mt-1 space-y-1 text-xs">
+                      <li><strong>Exact:</strong> Specific case only</li>
+                      <li><strong>Related:</strong> Similar cases & precedents</li>
+                      <li><strong>Broad:</strong> Comprehensive discovery</li>
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Right Column - Tips & Tech */}
+                <div>
+                  <div className="mb-3">
+                    <strong>💡 Pro Tips:</strong>
+                    <ul className="mt-1 space-y-1 text-xs text-blue-700">
+                      <li>• Use quotes: "religious freedom"</li>
+                      <li>• Try single names: Miller, Brown</li>
+                      <li>• Legal concepts: constitutional, precedent</li>
+                      <li>• Court names: Supreme Court</li>
+                    </ul>
+                  </div>
+                  
+                  <div>
+                    <strong>🔍 Database Coverage:</strong>
+                    <div className="text-xs text-blue-700 mt-1">
+                      <strong>CourtListener contains:</strong><br/>
+                      • 9+ million case law decisions from 2,000+ courts<br/>
+                      • Complete SCOTUS opinions collection<br/>
+                      • Hundreds of millions of federal PACER records<br/>
+                      • 3.3+ million minutes of oral arguments<br/>
+                      <br/>
+                      <strong>Technology:</strong> V4 Search API with intelligent ranking.
+                      Some newer cases may not have full text available.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Search Results Section */}
+      {/* Search Results Section - Streamlined */}
       {searchResults && (
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="text-lg font-semibold text-gray-900">Search Results</h4>
-            {searchResults.citation.parsed.isValid && (
-              <div className="flex items-center space-x-2 text-green-600">
-                <CheckCircle className="w-4 h-4" />
-                <span className="text-sm">Citation parsed successfully</span>
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
+          {/* Compact Status Bar */}
+          <div className="px-4 py-2 border-b border-gray-200 bg-gray-50">
+            {searchResults.summary.totalFound > 0 ? (
+              <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center space-x-2">
+                  <CheckCircle className="w-4 h-4 text-green-500" />
+                  <span className="font-medium text-gray-700">
+                    Found <strong>{searchResults.summary.totalFound}</strong> documents
+                  </span>
+                </div>
+                <div className="text-gray-500">
+                  {searchMode} search • 9M+ cases • V4 Search API
+                </div>
+              </div>
+            ) : searchResults.summary.errors.length > 0 ? (
+              <div className="flex items-center space-x-2 text-sm">
+                <AlertCircle className="w-4 h-4 text-red-500" />
+                <span className="text-red-700">
+                  Search failed • {searchResults.summary.errors[0]}
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 text-yellow-500" />
+                  <span className="text-yellow-700">
+                    No results for "<strong>{searchResults.citation.original}</strong>"
+                  </span>
+                </div>
+                <span className="text-gray-500">Try "Comprehensive" mode</span>
               </div>
             )}
           </div>
 
-          {/* Citation Info */}
-          <div className="bg-gray-50 rounded-lg p-4 mb-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <span className="font-medium text-gray-700">Case Name:</span>
-                <p className="text-gray-900">{searchResults.citation.parsed.caseName || 'Not parsed'}</p>
-              </div>
-              <div>
-                <span className="font-medium text-gray-700">Reporter:</span>
-                <p className="text-gray-900">{searchResults.citation.parsed.reporter || 'N/A'}</p>
-              </div>
-              <div>
-                <span className="font-medium text-gray-700">Volume:</span>
-                <p className="text-gray-900">{searchResults.citation.parsed.volume || 'N/A'}</p>
-              </div>
-              <div>
-                <span className="font-medium text-gray-700">Page:</span>
-                <p className="text-gray-900">{searchResults.citation.parsed.page || 'N/A'}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Error Messages */}
-          {searchResults.summary.errors.length > 0 && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-              <div className="flex items-center space-x-2 text-red-800 mb-2">
-                <AlertCircle className="w-4 h-4" />
-                <span className="font-medium">Search Issues</span>
-              </div>
-              <ul className="list-disc list-inside space-y-1 text-sm text-red-700">
-                {searchResults.summary.errors.map((error, index) => (
-                  <li key={index}>{error}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Documents Found */}
-          {searchResults.documents.length > 0 ? (
-            <div className="space-y-6">
+          {/* Document Selection Controls */}
+          {searchResults.documents.length > 0 && (
+            <div className="px-4 py-2 border-b border-gray-200 bg-gray-50">
               <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-600">
-                  Found {searchResults.summary.totalFound} total results, showing {searchResults.summary.documentsReturned} documents
-                </p>
+                <div className="flex items-center space-x-4">
+                  <p className="text-sm text-gray-600">
+                    Found {searchResults.summary.totalFound} total results, showing {searchResults.summary.documentsReturned} documents
+                  </p>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={selectAllDocuments}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      Select All
+                    </button>
+                    <span className="text-gray-400">|</span>
+                    <button
+                      onClick={selectNoneDocuments}
+                      className="text-sm text-gray-600 hover:text-gray-800 font-medium"
+                    >
+                      Select None
+                    </button>
+                  </div>
+                </div>
                 {selectedDocuments.size > 0 && (
                   <button
                     onClick={generateSummaries}
                     disabled={isGeneratingSummaries}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-300 text-sm flex items-center space-x-2"
+                    className="px-3 py-1 bg-green-600 text-white rounded text-sm flex items-center space-x-1"
                   >
                     {isGeneratingSummaries ? (
                       <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        <span>Generating Summaries...</span>
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                        <span>Generating...</span>
                       </>
                     ) : (
                       <>
-                        <FileText className="w-4 h-4" />
-                        <span>Generate AI Summaries ({selectedDocuments.size})</span>
+                        <FileText className="w-3 h-3" />
+                        <span>AI Summary ({selectedDocuments.size})</span>
                       </>
                     )}
                   </button>
                 )}
               </div>
-
-              {/* Document List by Type */}
-              <div className="space-y-6">
-                {Object.entries(groupDocumentsByType(searchResults.documents)).map(([type, documents]) => (
-                  <div key={type} className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h5 className="font-medium text-gray-900 flex items-center space-x-2">
-                        {getDocumentIcon(type)}
-                        <span>{getDocumentTypeLabel(type)} ({documents.length})</span>
-                      </h5>
-                      <button
-                        onClick={() => selectAllByType(type)}
-                        className="text-sm text-blue-600 hover:text-blue-800"
-                      >
-                        Select All {getDocumentTypeLabel(type)}
-                      </button>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      {documents.map((doc) => (
-                        <div
-                          key={doc.id}
-                          className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50"
-                        >
-                          <button
-                            onClick={() => toggleDocumentSelection(doc.id)}
-                            className="flex-shrink-0"
-                          >
-                            {selectedDocuments.has(doc.id) ? (
-                              <CheckSquare className="w-5 h-5 text-blue-600" />
-                            ) : (
-                              <Square className="w-5 h-5 text-gray-400" />
-                            )}
-                          </button>
-                          
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center space-x-2 mb-1">
-                              <p className="font-medium text-gray-900 truncate">{doc.title}</p>
-                              {doc.summary && (
-                                <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
-                                  AI Summary
-                                </span>
-                              )}
-                              {doc.hasPlainText && (
-                                <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
-                                  Full Text Available
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center space-x-4 text-sm text-gray-500 mt-1">
-                              <span className="flex items-center space-x-1">
-                                <Scale className="w-3 h-3" />
-                                <span>{doc.court}</span>
-                              </span>
-                              <span className="flex items-center space-x-1">
-                                <Clock className="w-3 h-3" />
-                                <span>{doc.date}</span>
-                              </span>
-                              <span className="flex items-center space-x-1">
-                                <FileText className="w-3 h-3" />
-                                <span>{doc.pageCount || 'Unknown'} pages</span>
-                              </span>
-                              {doc.docketNumber && (
-                                <span className="flex items-center space-x-1">
-                                  <BookOpen className="w-3 h-3" />
-                                  <span>Docket: {doc.docketNumber}</span>
-                                </span>
-                              )}
-                              {doc.authors && doc.authors.length > 0 && (
-                                <span className="flex items-center space-x-1">
-                                  <Users className="w-3 h-3" />
-                                  <span>by {doc.authors.join(', ')}</span>
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center space-x-2">
-                            <button
-                              onClick={() => loadDocumentPreview(doc)}
-                              className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
-                              title="Preview Document"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </button>
-                            <div className="flex flex-col items-end space-y-1">
-                              <div className="flex items-center space-x-2 text-xs">
-                                <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full">
-                                  {doc.source}
-                                </span>
-                                {doc.hasPlainText && (
-                                  <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full">
-                                    Full Text
-                                  </span>
-                                )}
-                              </div>
-                              {doc.downloadUrl && (
-                                <button 
-                                  onClick={() => window.open(doc.downloadUrl, '_blank')}
-                                  className="flex items-center space-x-1 text-xs text-gray-500 hover:text-gray-700"
-                                  title="View on CourtListener"
-                                >
-                                  <Download className="w-3 h-3" />
-                                  <span>View</span>
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Selection Summary */}
-              {selectedDocuments.size > 0 && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-center space-x-2 text-blue-800 mb-2">
-                    <CheckCircle className="w-4 h-4" />
-                    <span className="font-medium">Selected Documents ({selectedDocuments.size})</span>
-                  </div>
-                  <p className="text-sm text-blue-700">
-                    Selected documents will be automatically summarized using AI to extract key arguments, legal standards, 
-                    notable quotes, and cited cases. These summaries will enhance the AI's understanding of your case context.
-                  </p>
-                </div>
-              )}
             </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p>No documents found for this citation.</p>
-              <p className="text-sm mt-2">Try a different citation format or check the case name.</p>
+          )}
+
+          {/* Document List - Simple & Immediate */}
+          {searchResults.documents.length > 0 && (
+            <div className="divide-y divide-gray-100">
+              {searchResults.documents.map((doc) => (
+                <div
+                  key={doc.id}
+                  className="flex items-center space-x-3 p-3 hover:bg-gray-50"
+                >
+                  <button
+                    onClick={() => toggleDocumentSelection(doc.id)}
+                    className="flex-shrink-0"
+                  >
+                    {selectedDocuments.has(doc.id) ? (
+                      <CheckSquare className="w-4 h-4 text-blue-600" />
+                    ) : (
+                      <Square className="w-4 h-4 text-gray-400" />
+                    )}
+                  </button>
+                  
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-medium text-gray-900 truncate">{doc.title}</h4>
+                      <div className="flex items-center space-x-2 ml-2">
+                        <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">
+                          {doc.source}
+                        </span>
+                        <button
+                          onClick={() => loadDocumentPreview(doc)}
+                          className="p-1 text-blue-600 hover:text-blue-800 rounded"
+                          title="Preview"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        {doc.downloadUrl && (
+                          <button 
+                            onClick={() => window.open(doc.downloadUrl, '_blank')}
+                            className="p-1 text-gray-500 hover:text-gray-700 rounded"
+                            title="View on CourtListener"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-4 text-sm text-gray-500 mt-1">
+                      <span>{doc.court}</span>
+                      <span>•</span>
+                      <span>{doc.date}</span>
+                      {doc.docketNumber && (
+                        <>
+                          <span>•</span>
+                          <span>Docket: {doc.docketNumber}</span>
+                        </>
+                      )}
+                      {doc.authors && doc.authors.length > 0 && (
+                        <>
+                          <span>•</span>
+                          <span>by {doc.authors.join(', ')}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Selection Summary */}
+          {selectedDocuments.size > 0 && (
+            <div className="px-4 py-3 bg-blue-50 border-t border-blue-200">
+              <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center space-x-2 text-blue-800">
+                  <CheckCircle className="w-4 h-4" />
+                  <span className="font-medium">Selected Documents ({selectedDocuments.size})</span>
+                </div>
+                <span className="text-blue-700">Ready for AI summarization</span>
+              </div>
             </div>
           )}
         </div>
       )}
+
+
 
       {/* Document Preview Modal */}
       {previewDocument && (

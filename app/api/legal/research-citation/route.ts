@@ -6,43 +6,45 @@ import { searchCaseDocuments, getDocumentContent } from '@/lib/legal/courtlisten
 // Search for case documents based on legal citation
 export async function POST(request: NextRequest) {
   try {
-    const { citation } = await request.json();
+    // Handle both old (citation) and new (query) parameter formats
+    const { citation, query, searchMode = 'exact' } = await request.json();
+    const searchQuery = citation || query;
 
-    if (!citation || typeof citation !== 'string') {
+    if (!searchQuery || typeof searchQuery !== 'string') {
       return NextResponse.json(
-        { error: 'Citation is required' },
+        { error: 'Citation or query is required' },
         { status: 400 }
       );
     }
 
-    console.log(`Starting citation research for: "${citation}"`);
+    console.log(`Starting citation research for: "${searchQuery}" with mode: ${searchMode}`);
 
     // Validate and parse the citation
-    const validation = validateCitation(citation);
+    const validation = validateCitation(searchQuery);
     if (!validation.isValid) {
       return NextResponse.json(
         { 
           error: 'Invalid citation format',
           details: validation.errors,
-          citation: citation
+          citation: searchQuery
         },
         { status: 400 }
       );
     }
 
     // Parse the citation into components
-    const parsedCitation = parseCitation(citation);
+    const parsedCitation = parseCitation(searchQuery);
     console.log('Parsed citation:', parsedCitation);
 
-    // Search for case documents using CourtListener
-    const searchResults = await searchCaseDocuments(parsedCitation);
+    // Search for case documents using CourtListener with search mode
+    const searchResults = await searchCaseDocuments(parsedCitation, searchMode);
     
     console.log(`Found ${searchResults.documents.length} documents from ${searchResults.totalFound} total results`);
 
     // Format response
     const response = {
       citation: {
-        original: citation,
+        original: searchQuery,
         parsed: parsedCitation
       },
       documents: searchResults.documents.map(doc => ({

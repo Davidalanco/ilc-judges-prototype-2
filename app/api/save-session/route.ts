@@ -9,18 +9,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Transcription is required' }, { status: 400 });
     }
 
-    // For now, using demo user - TODO: Get from actual authentication
-    const userId = 'demo-user';
+    // For now, using existing user from working case - TODO: Get from actual authentication
+    const userId = '37dc83ba-123b-4c86-9c61-903c085193a0';
 
     // Create a new case record with the transcription
     const { data: caseData, error: caseError } = await supabaseAdmin
       .from('cases')
       .insert({
         user_id: userId,
-        case_title: `Case from ${fileName}`,
-        case_description: `Transcribed from audio file: ${fileName}`,
-        court_level: 'supreme_court',
+        title: `Case from ${fileName}`,
+        description: `Transcribed from audio file: ${fileName}`,
+        court_level: 'Supreme Court',
         case_status: 'draft',
+        status: 'draft',
+        case_type: 'constitutional',
+        current_step: 1,
         created_at: new Date().toISOString()
       })
       .select()
@@ -58,11 +61,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to save transcription' }, { status: 500 });
     }
 
+    // Automatically trigger AI case analysis after transcription is saved
+    try {
+      console.log('🤖 Triggering automatic AI case analysis...');
+      const { analyzeLegalTranscript } = await import('@/lib/ai/case-analyzer');
+      const analysis = await analyzeLegalTranscript(transcription);
+      
+      // Update the case with AI analysis results
+      const { error: updateError } = await supabaseAdmin
+        .from('cases')
+        .update({
+          case_name: analysis.caseName,
+          court_level: analysis.courtLevel,
+          constitutional_question: analysis.constitutionalQuestion,
+          penalties: analysis.penalties,
+          precedent_target: analysis.targetPrecedent,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', caseData.id);
+
+      if (updateError) {
+        console.error('Error updating case with AI analysis:', updateError);
+      } else {
+        console.log('✅ Case automatically updated with AI analysis');
+      }
+    } catch (aiError) {
+      console.error('❌ Error in automatic AI analysis:', aiError);
+      // Continue without failing the transcription save
+    }
+
     return NextResponse.json({
       success: true,
       caseId: caseData.id,
       conversationId: conversationData.id,
-      message: 'Session saved successfully'
+      message: 'Session saved successfully',
+      aiAnalysisTriggered: true
     });
 
   } catch (error) {

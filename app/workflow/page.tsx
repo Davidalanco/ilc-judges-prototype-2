@@ -38,6 +38,7 @@ import CitationResearch from '@/app/components/CitationResearch';
 import DebugLogPanel, { debugLog } from '@/app/components/DebugLogPanel';
 import CaseInformationInput from '@/app/components/CaseInformationInput';
 import WorkflowStep1 from '@/app/components/WorkflowStep1';
+import SpeakerTranscriptDisplay from '@/app/components/SpeakerTranscriptDisplay';
 
 // Component for managing open cases
 interface OpenCasesManagerProps {
@@ -408,10 +409,14 @@ export default function WorkflowPage() {
           console.log('📂 Restored current step:', step);
         }
 
-        // If we have a case ID, try to load recent transcriptions
+        // If we have a case ID, try to load recent transcriptions AND case information
         if (savedCaseId && savedCaseId !== 'null' && savedCaseId !== 'undefined') {
           console.log('🔍 Attempting to load recent transcriptions for case:', savedCaseId);
           await loadRecentTranscriptions(savedCaseId);
+          
+          // Also load case information to ensure it's available
+          console.log('📋 Loading case information for persistence');
+          await loadCaseInformation(savedCaseId);
         } else {
           console.log('📭 No valid case ID found - skipping transcription load');
         }
@@ -492,6 +497,35 @@ export default function WorkflowPage() {
     }
   };
 
+  // Load case information from database
+  const loadCaseInformation = async (caseId: string) => {
+    try {
+      console.log('📋 Loading case information from database for:', caseId);
+      const response = await fetch(`/api/cases/${caseId}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.case) {
+          const caseInfo = {
+            caseName: data.case.case_name || data.case.title || '',
+            courtLevel: data.case.court_level || '',
+            constitutionalQuestion: data.case.constitutional_question || '',
+            penalties: data.case.penalties || '',
+            targetPrecedent: data.case.precedent_target || ''
+          };
+          
+          setCaseInformation(caseInfo);
+          console.log('✅ Case information loaded from database:', caseInfo);
+          debugLog.success('Workflow', 'Case information loaded from database', { caseId, hasData: Object.values(caseInfo).some(v => v) });
+        }
+      } else {
+        console.log('⚠️ Failed to load case information from database');
+      }
+    } catch (error) {
+      console.error('❌ Error loading case information:', error);
+    }
+  };
+
   // Listen for case selection events to switch to workflow tab
   useEffect(() => {
     const handleSwitchToWorkflow = async (event: any) => {
@@ -522,14 +556,19 @@ export default function WorkflowPage() {
       if (event.detail?.clearTranscript) {
         debugLog.info('Workflow', 'Clearing transcript data for new case');
         console.log('🔄 Clearing transcript data for case switch');
-        setUploadedFileData(null);
-        // Reset to step 1 initially
-        setCurrentStep(1);
-        setCompletedSteps([]);
-        // Clear localStorage transcript data
-        localStorage.removeItem('workflow_file_data');
-        localStorage.removeItem('workflow_completed_steps');
-        localStorage.setItem('workflow_current_step', '1');
+        
+        // Only clear if we're actually starting a completely new workflow
+        if (event.detail?.startNewWorkflow) {
+          console.log('🆕 Confirmed new workflow - clearing all data');
+          setUploadedFileData(null);
+          setCurrentStep(1);
+          setCompletedSteps([]);
+          localStorage.removeItem('workflow_file_data');
+          localStorage.removeItem('workflow_completed_steps');
+          localStorage.setItem('workflow_current_step', '1');
+        } else {
+          console.log('⚠️ clearTranscript=true but not startNewWorkflow - preserving state to prevent data loss');
+        }
       } else {
         debugLog.info('Workflow', 'Loading existing case data (not clearing transcript)');
       }
@@ -550,6 +589,9 @@ export default function WorkflowPage() {
             setCompletedSteps([1]);
             setCurrentStep(2);
             console.log('✅ Loaded existing transcript from localStorage for case:', caseId);
+            
+            // Also load case information from database
+            loadCaseInformation(caseId);
           } else {
             // If no localStorage data, check database for existing transcriptions
             console.log('🔍 Checking database for existing transcriptions for case:', caseId);
@@ -592,6 +634,9 @@ export default function WorkflowPage() {
                   // Save to localStorage for future use
                   localStorage.setItem(`workflow_file_data_${caseId}`, JSON.stringify(fileData));
                   console.log('✅ Loaded transcription from database and saved to localStorage');
+                  
+                  // Also load case information from database
+                  loadCaseInformation(caseId);
                 } else {
                   debugLog.info('Workflow', `No transcriptions found for case: ${caseId} - will show upload screen`);
                   console.log('📭 No transcriptions found in database for case:', caseId);
@@ -647,11 +692,11 @@ export default function WorkflowPage() {
     setUploadedFileData(fileData);
     
     // Store case ID if this upload created one
-    if (fileData.caseId && fileData.caseId !== 'none' && !currentCaseId) {
+    if (fileData.caseId && fileData.caseId !== 'none') {
       setCurrentCaseId(fileData.caseId);
       localStorage.setItem('workflow_case_id', fileData.caseId);
-      console.log('🆔 New case ID created and set:', fileData.caseId);
-      debugLog.success('Workflow', 'Case created automatically during file upload', { caseId: fileData.caseId });
+      console.log('🆔 Case ID from upload set:', fileData.caseId);
+      debugLog.success('Workflow', 'Case ID updated from file upload', { caseId: fileData.caseId });
     }
     
     // Mark step as complete after state is set
@@ -1447,49 +1492,18 @@ export default function WorkflowPage() {
 
                                       {uploadedFileData.transcription && (
                                         <div className="mt-4 border-t border-green-300 pt-4">
-                                          <h5 className="font-semibold text-green-900 mb-2">📝 Full Transcript:</h5>
-                                          <div className="bg-white border border-green-200 rounded p-4 max-h-96 overflow-y-auto text-sm text-gray-700 font-mono leading-relaxed">
-                                            {uploadedFileData.transcription}
-                                          </div>
-                                          <div className="flex items-center justify-between mt-2">
-                                            <p className="text-xs text-green-600">
-                                              Total: {uploadedFileData.transcription.length.toLocaleString()} characters
-                                            </p>
-                                            <button
-                                              onClick={() => {
-                                                navigator.clipboard.writeText(uploadedFileData.transcription);
-                                                // Add a simple toast notification
-                                                const toast = document.createElement('div');
-                                                toast.textContent = 'Transcript copied to clipboard!';
-                                                toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50';
-                                                document.body.appendChild(toast);
-                                                setTimeout(() => document.body.removeChild(toast), 2000);
-                                              }}
-                                              className="text-xs text-blue-600 hover:text-blue-700 underline"
-                                            >
-                                              Copy to Clipboard
-                                            </button>
-                                          </div>
+                                          <SpeakerTranscriptDisplay
+                                            segments={uploadedFileData.segments}
+                                            speakers={uploadedFileData.speakers}
+                                            transcription={uploadedFileData.transcription}
+                                            showTimestamps={true}
+                                            showSpeakerStats={true}
+                                            maxHeight="max-h-96"
+                                          />
                                         </div>
                                       )}
 
-                                      
-                                      {/* Display speaker information */}
-                                      {uploadedFileData.speakers && uploadedFileData.speakers.length > 0 && (
-                                        <div className="mt-4 border-t border-green-300 pt-4">
-                                          <h5 className="font-semibold text-green-900 mb-2">👥 Speakers Detected:</h5>
-                                          <div className="grid grid-cols-2 gap-2">
-                                            {uploadedFileData.speakers.map((speaker: any, index: number) => (
-                                              <div key={index} className="bg-white border border-green-200 rounded p-2 text-xs">
-                                                <strong>{speaker.name || `Speaker ${index + 1}`}</strong>
-                                                {speaker.segments && (
-                                                  <p className="text-gray-600">{speaker.segments} segments</p>
-                                                )}
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
+
                                       
                                       <div className="mt-4">
                                         <button
@@ -1545,6 +1559,8 @@ export default function WorkflowPage() {
                               <CaseInformationInput
                                 transcript={uploadedFileData?.transcription}
                                 autoAnalyze={true}
+                                caseId={currentCaseId}
+                                initialCaseInfo={caseInformation}
                                 onCaseInfoComplete={async (caseInfo) => {
                                   setCaseInformation(caseInfo);
                                   console.log('📋 Case information completed:', caseInfo);

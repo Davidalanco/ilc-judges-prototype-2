@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
       file_name, 
       transcript, 
       speakers, 
+      segments,
       duration_seconds,
       file_size,
       file_type 
@@ -101,7 +102,8 @@ export async function POST(request: NextRequest) {
         analysis_result: {
           duration_seconds: duration_seconds || 0,
           speaker_count: speakers?.length || 1,
-          speakers: speakers || []
+          speakers: speakers || [],
+          segments: segments || []
         }
       })
       .select()
@@ -112,9 +114,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create transcription' }, { status: 500 });
     }
 
+    // Automatically trigger AI case analysis after transcription is saved
+    if (case_id && transcript) {
+      try {
+        console.log('🤖 Triggering automatic AI case analysis for case:', case_id);
+        const { analyzeLegalTranscript } = await import('@/lib/ai/case-analyzer');
+        const analysis = await analyzeLegalTranscript(transcript);
+        
+        // Update the case with AI analysis results
+        const { error: updateError } = await supabaseAdmin
+          .from('cases')
+          .update({
+            case_name: analysis.caseName,
+            court_level: analysis.courtLevel,
+            constitutional_question: analysis.constitutionalQuestion,
+            penalties: analysis.penalties,
+            precedent_target: analysis.targetPrecedent,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', case_id);
+
+        if (updateError) {
+          console.error('Error updating case with AI analysis:', updateError);
+        } else {
+          console.log('✅ Case automatically updated with AI analysis');
+        }
+      } catch (aiError) {
+        console.error('❌ Error in automatic AI analysis:', aiError);
+        // Continue without failing the transcription save
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      data
+      data,
+      aiAnalysisTriggered: !!case_id
     });
 
   } catch (error) {

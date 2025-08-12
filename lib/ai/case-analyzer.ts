@@ -19,6 +19,14 @@ export interface CaseAnalysis {
   confidence: number;
 }
 
+export interface CaseInformation {
+  case_name: string;
+  court_level: string;
+  constitutional_question: string;
+  penalties: string;
+  precedent_target: string;
+}
+
 export async function analyzeLegalTranscript(transcript: string): Promise<CaseAnalysis> {
   try {
     const prompt = `
@@ -75,8 +83,25 @@ Rules:
       throw new Error('No response from OpenAI');
     }
 
-    // Parse the JSON response
-    const analysis = JSON.parse(response) as CaseAnalysis;
+    // Parse the JSON response - handle potential markdown formatting and extract JSON
+    let cleanResponse = response.trim();
+    
+    // Remove markdown code blocks
+    if (cleanResponse.startsWith('```json')) {
+      cleanResponse = cleanResponse.replace(/```json\s*/, '').replace(/```\s*$/, '');
+    } else if (cleanResponse.startsWith('```')) {
+      cleanResponse = cleanResponse.replace(/```\s*/, '').replace(/```\s*$/, '');
+    }
+    
+    // Try to extract JSON from the response if it's mixed with text
+    const jsonMatch = cleanResponse.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      cleanResponse = jsonMatch[0];
+    }
+    
+    console.log('🔍 Attempting to parse AI response:', cleanResponse.substring(0, 200) + '...');
+    
+    const analysis = JSON.parse(cleanResponse) as CaseAnalysis;
     
     // Validate required fields
     if (!analysis.caseName || !analysis.courtLevel || !analysis.constitutionalQuestion) {
@@ -102,6 +127,85 @@ Rules:
       legalIssues: ["Constitutional rights", "Legal analysis required"],
       keyArguments: ["Further analysis needed"],
       confidence: 0.1
+    };
+  }
+}
+
+export async function extractCaseInformation(transcript: string): Promise<CaseInformation> {
+  try {
+    const prompt = `
+Analyze this legal transcript and extract ONLY the following case information fields. Be precise and specific:
+
+TRANSCRIPT:
+${transcript}
+
+Extract the following information and return ONLY a JSON object with these exact fields:
+
+{
+  "case_name": "The actual case name mentioned (e.g., 'Miller v. New York State Department of Health')",
+  "court_level": "The court level (e.g., 'Supreme Court', 'Federal Court', 'Second Circuit', etc.)",
+  "constitutional_question": "The specific constitutional question or legal issue being addressed",
+  "penalties": "Any specific fines, penalties, or sanctions mentioned (include dollar amounts)",
+  "precedent_target": "Key precedent cases mentioned that are being challenged or relied upon"
+}
+
+Rules:
+- Return ONLY valid JSON, no markdown or additional text
+- If a case name is not mentioned, create one based on the parties and legal issue
+- If information is unclear, make reasonable inferences from context
+- Keep constitutional questions specific and legally precise
+- Include specific amounts for penalties if mentioned
+- Focus on Supreme Court precedents when mentioned
+`;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        {
+          role: "system",
+          content: "You are a legal expert. Extract case information from legal transcripts and return ONLY valid JSON with no additional formatting or text."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.1,
+      max_tokens: 800,
+    });
+
+    const response = completion.choices[0].message.content;
+    if (!response) {
+      throw new Error('No response from OpenAI');
+    }
+
+    // Clean and parse JSON response
+    let cleanResponse = response.trim();
+    if (cleanResponse.startsWith('```json')) {
+      cleanResponse = cleanResponse.replace(/```json\s*/, '').replace(/```\s*$/, '');
+    } else if (cleanResponse.startsWith('```')) {
+      cleanResponse = cleanResponse.replace(/```\s*/, '').replace(/```\s*$/, '');
+    }
+    
+    const caseInfo = JSON.parse(cleanResponse) as CaseInformation;
+    
+    // Validate required fields
+    if (!caseInfo.case_name || !caseInfo.constitutional_question) {
+      throw new Error('Missing required case information');
+    }
+
+    return caseInfo;
+
+  } catch (error) {
+    console.error('Error extracting case information:', error);
+    
+    // Return fallback case information
+    return {
+      case_name: "Case Analysis Pending",
+      court_level: "Federal Court",
+      constitutional_question: "Constitutional question to be determined from transcript analysis",
+      penalties: "To be determined",
+      precedent_target: "To be determined"
     };
   }
 }

@@ -22,12 +22,16 @@ interface CaseInformationInputProps {
   transcript?: string;
   onCaseInfoComplete?: (caseInfo: any) => void;
   autoAnalyze?: boolean;
+  caseId?: string | null;
+  initialCaseInfo?: any;
 }
 
 export default function CaseInformationInput({ 
   transcript, 
   onCaseInfoComplete,
-  autoAnalyze = true 
+  autoAnalyze = true,
+  caseId,
+  initialCaseInfo
 }: CaseInformationInputProps) {
   // Form state
   const [caseName, setCaseName] = useState('');
@@ -41,14 +45,61 @@ export default function CaseInformationInput({
   const [analysis, setAnalysis] = useState<CaseAnalysis | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [confidence, setConfidence] = useState<number>(0);
+  const [hasAnalyzed, setHasAnalyzed] = useState(false);
 
-  // Auto-analyze when transcript is provided
+  // Track which transcript has been analyzed to prevent duplicates
+  const [analyzedTranscript, setAnalyzedTranscript] = useState<string>('');
+
+  // Load existing case data when initialCaseInfo is provided (AI analysis should already be done server-side)
   useEffect(() => {
-    if (transcript && autoAnalyze && transcript.length > 50) {
-      console.log('🤖 Auto-analyzing transcript of length:', transcript.length);
-      performAnalysis();
+    if (transcript && transcript.length > 50) {
+      console.log('📋 Transcript available - AI analysis should have been performed server-side during transcription save');
+      
+      // Check if we have existing case data, if not, the analysis may still be processing
+      const hasExistingData = caseName || courtLevel || constitutionalQuestion || penalties || targetPrecedent;
+      if (!hasExistingData && initialCaseInfo) {
+        console.log('📋 Loading case information from database (should contain AI analysis results)');
+      }
     }
-  }, [transcript, autoAnalyze]);
+  }, [transcript, caseName, courtLevel, constitutionalQuestion, penalties, targetPrecedent, initialCaseInfo]);
+
+  // Populate form fields when initialCaseInfo is provided
+  useEffect(() => {
+    if (initialCaseInfo) {
+      console.log('📋 Populating form with initial case info:', initialCaseInfo);
+      setCaseName(initialCaseInfo.caseName || '');
+      setCourtLevel(initialCaseInfo.courtLevel || '');
+      setConstitutionalQuestion(initialCaseInfo.constitutionalQuestion || '');
+      setPenalties(initialCaseInfo.penalties || '');
+      setTargetPrecedent(initialCaseInfo.targetPrecedent || '');
+    }
+  }, [initialCaseInfo]);
+
+  const saveCaseInformation = async (analysisData: any, targetCaseId: string) => {
+    try {
+      const response = await fetch(`/api/cases/${targetCaseId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          case_name: analysisData.caseName,
+          court_level: analysisData.courtLevel,
+          constitutional_question: analysisData.constitutionalQuestion,
+          penalties: analysisData.penalties,
+          precedent_target: analysisData.targetPrecedent
+        }),
+      });
+
+      if (response.ok) {
+        console.log('✅ Case information saved to database successfully');
+      } else {
+        console.error('❌ Failed to save case information to database');
+      }
+    } catch (error) {
+      console.error('❌ Error saving case information:', error);
+    }
+  };
 
   const performAnalysis = async () => {
     if (!transcript) {
@@ -92,6 +143,17 @@ export default function CaseInformationInput({
         setTargetPrecedent(data.analysis.targetPrecedent);
 
         console.log('✅ Case information auto-populated from AI analysis');
+        
+        // Automatically save the case information to database if caseId is available
+        if (caseId) {
+          console.log('💾 Auto-saving case information to database...', { caseId });
+          saveCaseInformation(data.analysis, caseId);
+        } else {
+          console.log('⚠️ No caseId available for auto-save');
+        }
+        
+        setHasAnalyzed(true); // Mark as analyzed to prevent duplicate calls
+        setAnalyzedTranscript(transcript); // Track this specific transcript as analyzed
       } else {
         throw new Error('Invalid analysis response');
       }
@@ -99,6 +161,8 @@ export default function CaseInformationInput({
     } catch (error) {
       console.error('❌ Error analyzing transcript:', error);
       setAnalysisError(error instanceof Error ? error.message : 'Analysis failed');
+      setHasAnalyzed(true); // Mark as analyzed even on error to prevent infinite retries
+      setAnalyzedTranscript(transcript); // Track this transcript as analyzed even on error
     } finally {
       setAnalyzing(false);
     }

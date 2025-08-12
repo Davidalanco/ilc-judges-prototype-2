@@ -32,3 +32,4 @@ SIMPLE_SQL_TO_RUN.sql
 # Test API endpoints  
 app/api/test-*/
 
+create-tables.js

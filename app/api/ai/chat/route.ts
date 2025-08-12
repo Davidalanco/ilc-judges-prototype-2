@@ -28,10 +28,11 @@ export async function POST(request: NextRequest) {
 
     // Save user message to database
     await db.addBriefSectionChat({
-      case_id: caseId,
+      brief_id: caseId, // Using case_id as brief_id for now
+      user_id: session.user.id,
       section_id: sectionId,
-      role: 'user',
-      content: message
+      message_type: 'user',
+      message_content: message
     });
 
     // Generate AI response
@@ -39,10 +40,11 @@ export async function POST(request: NextRequest) {
 
     // Save AI response to database
     await db.addBriefSectionChat({
-      case_id: caseId,
+      brief_id: caseId, // Using case_id as brief_id for now
+      user_id: session.user.id,
       section_id: sectionId,
-      role: 'assistant',
-      content: aiResponse
+      message_type: 'assistant',
+      message_content: aiResponse
     });
 
     return NextResponse.json({

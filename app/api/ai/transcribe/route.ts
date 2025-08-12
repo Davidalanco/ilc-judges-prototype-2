@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { transcribeAudioWithSpeakers } from '@/lib/ai/elevenlabs';
 import { analyzeConversation, extractCaseInfo } from '@/lib/ai/openai';
-import { db } from '@/lib/db';
+import { db, supabase } from '@/lib/db';
 import '@/types/auth';
 
 const s3Client = new S3Client({
@@ -28,17 +28,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Conversation ID required' }, { status: 400 });
     }
 
-    // Get conversation from database
-    const conversations = await db.query(
-      'SELECT * FROM attorney_conversations WHERE id = $1',
-      [conversationId]
-    );
+    // Get conversation from database using Supabase client
+    const { data: conversations, error: fetchError } = await supabase
+      .from('attorney_conversations')
+      .select('*')
+      .eq('id', conversationId);
 
-    if (conversations.rows.length === 0) {
+    if (fetchError || !conversations || conversations.length === 0) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
 
-    const conversation = conversations.rows[0];
+    const conversation = conversations[0];
 
     // Verify user owns this conversation through the case
     const caseData = await db.getCaseById(conversation.case_id);

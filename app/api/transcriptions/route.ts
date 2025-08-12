@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
     const search = searchParams.get('search') || '';
+    const caseId = searchParams.get('caseId') || '';
 
     let query = supabaseAdmin
       .from('attorney_conversations')
@@ -17,30 +18,26 @@ export async function GET(request: NextRequest) {
         file_name,
         file_size,
         file_type,
-        duration_seconds,
+        s3_url,
         transcript,
-        speaker_count,
-        speakers,
-        analysis,
-        transcript_quality,
-        conversation_type,
-        processing_status,
+        transcription_text,
+        transcription_status,
+        status,
+        analysis_result,
         created_at,
-        updated_at,
-        cases (
-          id,
-          case_name,
-          case_type,
-          court_level,
-          status
-        )
+        updated_at
       `)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
+    // Add case filter if provided
+    if (caseId) {
+      query = query.eq('case_id', caseId);
+    }
+
     // Add search filter if provided
     if (search) {
-      query = query.or(`file_name.ilike.%${search}%,transcript.ilike.%${search}%,cases.case_name.ilike.%${search}%`);
+      query = query.or(`file_name.ilike.%${search}%,transcript.ilike.%${search}%,transcription_text.ilike.%${search}%`);
     }
 
     const { data, error, count } = await query;
@@ -53,6 +50,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: data || [],
+      transcriptions: data || [], // Also provide transcriptions field for compatibility
       total: count,
       pagination: {
         limit,
@@ -94,17 +92,17 @@ export async function POST(request: NextRequest) {
       .insert({
         case_id,
         file_name,
-        transcript,
-        speaker_count: speakers?.length || 1,
-        speakers: speakers || [],
-        duration_seconds: duration_seconds || 0,
-        file_size: file_size || 0,
         file_type: file_type || 'audio/unknown',
-        conversation_type: 'manual_entry',
-        processing_status: 'completed',
-        transcript_quality: 90,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        file_size: file_size || 0,
+        s3_url: 'https://placeholder.com/audio.mp3',
+        upload_status: 'completed',
+        transcription_text: transcript,
+        transcription_status: 'completed',
+        analysis_result: {
+          duration_seconds: duration_seconds || 0,
+          speaker_count: speakers?.length || 1,
+          speakers: speakers || []
+        }
       })
       .select()
       .single();

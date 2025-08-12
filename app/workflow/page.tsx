@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Upload, 
   FileText, 
@@ -35,9 +35,302 @@ import {
 } from 'lucide-react';
 import FileUpload from '@/app/components/FileUpload';
 import CitationResearch from '@/app/components/CitationResearch';
-import TranscriptionManager from '@/app/components/TranscriptionManager';
+import DebugLogPanel, { debugLog } from '@/app/components/DebugLogPanel';
+import CaseInformationInput from '@/app/components/CaseInformationInput';
+import WorkflowStep1 from '@/app/components/WorkflowStep1';
+
+// Component for managing open cases
+interface OpenCasesManagerProps {
+  currentCaseId: string | null;
+  onCaseSelect: (caseId: string) => void;
+}
+
+function OpenCasesManager({ currentCaseId, onCaseSelect }: OpenCasesManagerProps) {
+  const [cases, setCases] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Load cases on component mount
+  useEffect(() => {
+    loadCases();
+  }, []);
+
+  const loadCases = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/cases');
+      if (response.ok) {
+        const data = await response.json();
+        setCases(data.cases || []);
+      } else {
+        setError('Failed to load cases');
+      }
+    } catch (error) {
+      console.error('Error loading cases:', error);
+      setError('Error loading cases');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCaseSelect = (caseId: string) => {
+    debugLog.info('Case Selection', `Opening case: ${caseId}`);
+    onCaseSelect(caseId);
+    // Store in localStorage for persistence
+    localStorage.setItem('workflow_case_id', caseId);
+    
+    // Switch to workflow tab and load case data
+    if (typeof window !== 'undefined') {
+      const event = new CustomEvent('switchToWorkflow', { 
+        detail: { 
+          clearTranscript: false, // Don't clear - we want to LOAD existing data
+          loadCaseData: true,
+          caseId: caseId 
+        } 
+      });
+      window.dispatchEvent(event);
+    }
+  };
+
+  const handleDeleteCase = async (caseId: string, caseName: string) => {
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${caseName}"?\n\nThis action cannot be undone and will permanently remove the case and all associated data.`
+    );
+    
+    if (!confirmed) {
+      debugLog.info('Case Management', 'Case deletion cancelled by user');
+      return;
+    }
+
+    debugLog.info('Case Management', `Deleting case: ${caseName} (${caseId})`);
+    
+    try {
+      debugLog.api('API Call', 'DELETE /api/cases', { caseId, caseName });
+      
+      const response = await fetch(`/api/cases?id=${caseId}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        debugLog.success('Case Management', `Case "${caseName}" deleted successfully`, result);
+        
+        // Remove case from local state
+        setCases(prev => prev.filter(c => c.id !== caseId));
+        
+        // If this was the current case, clear it
+        if (currentCaseId === caseId) {
+          onCaseSelect('');
+          localStorage.removeItem('workflow_case_id');
+        }
+        
+        // Show success message
+        const toast = document.createElement('div');
+        toast.textContent = `✅ "${caseName}" deleted successfully`;
+        toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50';
+        document.body.appendChild(toast);
+        setTimeout(() => {
+          if (document.body.contains(toast)) {
+            document.body.removeChild(toast);
+          }
+        }, 3000);
+        
+      } else {
+        const errorData = await response.json();
+        debugLog.error('Case Management', `Failed to delete case: ${errorData.error || 'Unknown error'}`, errorData);
+        setError(`Failed to delete case: ${errorData.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      debugLog.error('Case Management', 'Error deleting case', error);
+      console.error('Error deleting case:', error);
+      setError('Error deleting case');
+    }
+  };
+
+  const startNewWorkflow = () => {
+    debugLog.info('Workflow', 'Starting new workflow - case will be created on first file upload');
+    
+    // Force clear ALL workflow-related localStorage items
+    const workflowKeys = [
+      'workflow_case_id',
+      'workflow_file_data', 
+      'workflow_completed_steps',
+      'workflow_current_step'
+    ];
+    
+    workflowKeys.forEach(key => {
+      localStorage.removeItem(key);
+      console.log(`🧹 Cleared localStorage: ${key}`);
+    });
+    
+    // Set initial step
+    localStorage.setItem('workflow_current_step', '1');
+    
+    // Trigger a refresh/navigation to workflow tab in clean state
+    if (typeof window !== 'undefined') {
+      const event = new CustomEvent('switchToWorkflow', { 
+        detail: { 
+          clearTranscript: true,
+          loadCaseData: false,
+          startNewWorkflow: true
+        } 
+      });
+      window.dispatchEvent(event);
+    }
+    
+    debugLog.success('Workflow', 'Ready to start new workflow - upload an audio file to begin');
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading cases...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+        <div className="flex items-center">
+          <XCircle className="w-5 h-5 text-red-500 mr-2" />
+          <span className="text-red-700">{error}</span>
+        </div>
+        <button
+          onClick={loadCases}
+          className="mt-3 text-sm text-red-600 hover:text-red-700 underline"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Open Cases</h2>
+          <p className="text-gray-600 mt-1">Manage your active legal cases and continue your brief development</p>
+        </div>
+        <button
+          onClick={startNewWorkflow}
+          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          <Gavel className="w-4 h-4 mr-2" />
+          Start New Workflow
+        </button>
+      </div>
+
+      {/* Cases List */}
+      {cases.length === 0 ? (
+        <div className="text-center py-12 bg-gray-50 rounded-lg">
+          <Gavel className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-700 mb-2">No Cases Yet</h3>
+          <p className="text-gray-500 mb-4">Start your first workflow by uploading an audio file - the case will be created automatically</p>
+          <button
+            onClick={startNewWorkflow}
+            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Gavel className="w-4 h-4 mr-2" />
+            Start Your First Workflow
+          </button>
+        </div>
+      ) : (
+        <div className="grid gap-4">
+          {cases.map((caseItem) => (
+            <div
+              key={caseItem.id}
+              className={`bg-white rounded-lg border p-6 hover:shadow-md transition-shadow cursor-pointer ${
+                currentCaseId === caseItem.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+              }`}
+              onClick={() => handleCaseSelect(caseItem.id)}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-3 mb-2">
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      {caseItem.case_name || 'Untitled Case'}
+                    </h3>
+                    {currentCaseId === caseItem.id && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        Active
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
+                    <div>
+                      <span className="font-medium">Court Level:</span>
+                      <p className="capitalize">{caseItem.court_level || 'Not specified'}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium">Case Type:</span>
+                      <p className="capitalize">{caseItem.case_type || 'Not specified'}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium">Status:</span>
+                      <p className="capitalize">{caseItem.status || 'Draft'}</p>
+                    </div>
+                  </div>
+                  
+                  {caseItem.constitutional_question && (
+                    <div className="mt-3">
+                      <span className="font-medium text-sm text-gray-600">Constitutional Question:</span>
+                      <p className="text-sm text-gray-700 mt-1 line-clamp-2">
+                        {caseItem.constitutional_question}
+                      </p>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center justify-between mt-4">
+                    <div className="text-xs text-gray-500">
+                      Created: {new Date(caseItem.created_at).toLocaleDateString()}
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteCase(caseItem.id, caseItem.case_name || 'Untitled Case');
+                        }}
+                        className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 font-medium border border-red-200 hover:border-red-300 px-2 py-1 rounded transition-all duration-200"
+                        title="Delete this case permanently"
+                      >
+                        🗑️ Delete
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCaseSelect(caseItem.id);
+                        }}
+                        className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        {currentCaseId === caseItem.id ? 'Continue Working →' : 'Open Case →'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function WorkflowPage() {
+  // Initialize debug logging
+  React.useEffect(() => {
+    debugLog.info('Workflow', 'Supreme Court Brief Workflow loaded');
+    debugLog.info('System', 'Debug panel initialized - ready for upload testing');
+  }, []);
   const [currentStep, setCurrentStep] = useState(1);
   const [activeTab, setActiveTab] = useState('workflow');
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
@@ -47,6 +340,282 @@ export default function WorkflowPage() {
   const [documentSummaries, setDocumentSummaries] = useState<any[]>([]);
   const [briefSectionChats, setBriefSectionChats] = useState<{[key: string]: Array<{role: 'user' | 'assistant', content: string}>}>({});
   const [chatInputs, setChatInputs] = useState<{[key: string]: string}>({});
+  const [currentCaseId, setCurrentCaseId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [forceRender, setForceRender] = useState(0);
+  const [caseInformation, setCaseInformation] = useState<any>(null);
+
+  // Force re-render when uploadedFileData changes
+  useEffect(() => {
+    if (uploadedFileData) {
+      setForceRender(prev => prev + 1);
+    }
+  }, [uploadedFileData]);
+
+  // Load existing workflow data on component mount
+  useEffect(() => {
+    const loadWorkflowData = async () => {
+      try {
+        // Check localStorage for existing workflow session
+        const savedCaseId = localStorage.getItem('workflow_case_id');
+        const savedFileData = localStorage.getItem('workflow_file_data');
+        const savedSteps = localStorage.getItem('workflow_completed_steps');
+        const savedCurrentStep = localStorage.getItem('workflow_current_step');
+
+        // Validate case ID exists in database before using it
+        if (savedCaseId && savedCaseId !== 'null' && savedCaseId !== 'undefined') {
+          try {
+            console.log('🔍 Validating saved case ID:', savedCaseId);
+            const response = await fetch('/api/cases');
+            if (response.ok) {
+              const data = await response.json();
+              const caseExists = data.cases && data.cases.some((c: any) => c.id === savedCaseId);
+              if (caseExists) {
+                setCurrentCaseId(savedCaseId);
+                console.log('✅ Validated case ID from localStorage:', savedCaseId);
+              } else {
+                console.log('❌ Case ID not found in database, clearing localStorage');
+                localStorage.removeItem('workflow_case_id');
+                setCurrentCaseId(null);
+              }
+            } else {
+              console.log('❌ Failed to validate case ID, clearing localStorage');
+              localStorage.removeItem('workflow_case_id');
+              setCurrentCaseId(null);
+            }
+          } catch (error) {
+            console.log('❌ Error validating case ID, clearing localStorage:', error);
+            localStorage.removeItem('workflow_case_id');
+            setCurrentCaseId(null);
+          }
+        }
+
+        if (savedFileData) {
+          const fileData = JSON.parse(savedFileData);
+          setUploadedFileData(fileData);
+          console.log('📂 Restored file data from localStorage:', fileData.fileName);
+        }
+
+        if (savedSteps) {
+          const steps = JSON.parse(savedSteps);
+          setCompletedSteps(steps);
+          console.log('📂 Restored completed steps:', steps);
+        }
+
+        if (savedCurrentStep) {
+          const step = parseInt(savedCurrentStep);
+          setCurrentStep(step);
+          console.log('📂 Restored current step:', step);
+        }
+
+        // If we have a case ID, try to load recent transcriptions
+        if (savedCaseId && savedCaseId !== 'null' && savedCaseId !== 'undefined') {
+          console.log('🔍 Attempting to load recent transcriptions for case:', savedCaseId);
+          await loadRecentTranscriptions(savedCaseId);
+        } else {
+          console.log('📭 No valid case ID found - skipping transcription load');
+        }
+
+      } catch (error) {
+        console.error('Error loading workflow data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadWorkflowData();
+  }, []);
+
+  // Save workflow state to localStorage whenever it changes
+  useEffect(() => {
+    if (currentCaseId) {
+      localStorage.setItem('workflow_case_id', currentCaseId);
+    }
+  }, [currentCaseId]);
+
+  useEffect(() => {
+    if (uploadedFileData) {
+      localStorage.setItem('workflow_file_data', JSON.stringify(uploadedFileData));
+    }
+  }, [uploadedFileData]);
+
+  useEffect(() => {
+    localStorage.setItem('workflow_completed_steps', JSON.stringify(completedSteps));
+  }, [completedSteps]);
+
+  useEffect(() => {
+    localStorage.setItem('workflow_current_step', currentStep.toString());
+  }, [currentStep]);
+
+  // Load recent transcriptions for a case
+  const loadRecentTranscriptions = async (caseId: string) => {
+    if (!caseId || caseId === 'undefined' || caseId === 'null') {
+      console.log('⚠️ Invalid caseId provided to loadRecentTranscriptions:', caseId);
+      return;
+    }
+    
+    try {
+      console.log('🔍 Loading recent transcriptions for valid caseId:', caseId);
+      const response = await fetch(`/api/transcriptions?caseId=${caseId}&limit=1`);
+      if (response.ok) {
+        const data = await response.json();
+        const transcriptions = data.data || [];
+        
+        if (transcriptions.length > 0) {
+          const latest = transcriptions[0];
+          console.log('📂 Found recent transcription:', latest.file_name);
+          
+          // Reconstruct the file data from the database record
+          const reconstructedFileData = {
+            fileName: latest.file_name,
+            fileSize: latest.file_size,
+            duration: `${latest.duration_seconds}s`,
+            transcription: latest.transcript || latest.transcription_text,
+            language: 'eng', // Default since not stored
+            speakers: latest.speakers || [],
+            speakerCount: latest.speaker_count || 0,
+            s3Key: latest.s3_key,
+            conversationId: latest.id,
+            transcriptionProvider: 'Database' // Indicate this came from saved data
+          };
+          
+          setUploadedFileData(reconstructedFileData);
+          
+          // Mark step 1 as completed if we have transcription data
+          if (!completedSteps.includes(1)) {
+            setCompletedSteps(prev => [...prev, 1]);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading recent transcriptions:', error);
+    }
+  };
+
+  // Listen for case selection events to switch to workflow tab
+  useEffect(() => {
+    const handleSwitchToWorkflow = async (event: any) => {
+      setActiveTab('workflow');
+      
+      // Handle new workflow start
+      if (event.detail?.startNewWorkflow) {
+        debugLog.info('Workflow', 'Starting completely new workflow');
+        console.log('🆕 Starting new workflow - clearing all data');
+        
+        // Force clear all state and localStorage
+        setCurrentCaseId(null);
+        setUploadedFileData(null);
+        setCurrentStep(1);
+        setCompletedSteps([]);
+        setExpandedStep(1); // Auto-expand step 1 to show upload
+        
+        // Extra safety: clear localStorage again
+        localStorage.removeItem('workflow_case_id');
+        localStorage.removeItem('workflow_file_data');
+        localStorage.removeItem('workflow_completed_steps');
+        
+        console.log('🧹 All workflow data cleared - ready for fresh start');
+        return; // Exit early for new workflow
+      }
+      
+      // Clear transcript data if switching to a new case
+      if (event.detail?.clearTranscript) {
+        debugLog.info('Workflow', 'Clearing transcript data for new case');
+        console.log('🔄 Clearing transcript data for case switch');
+        setUploadedFileData(null);
+        // Reset to step 1 initially
+        setCurrentStep(1);
+        setCompletedSteps([]);
+        // Clear localStorage transcript data
+        localStorage.removeItem('workflow_file_data');
+        localStorage.removeItem('workflow_completed_steps');
+        localStorage.setItem('workflow_current_step', '1');
+      } else {
+        debugLog.info('Workflow', 'Loading existing case data (not clearing transcript)');
+      }
+      
+      // Load case data if specified
+      if (event.detail?.loadCaseData && event.detail?.caseId) {
+        const caseId = event.detail.caseId;
+        console.log('📁 Loading case data for:', caseId);
+        
+        try {
+          // First check localStorage for case-specific transcript data
+          const savedFileData = localStorage.getItem(`workflow_file_data_${caseId}`);
+          
+          if (savedFileData) {
+            console.log('📂 Found localStorage transcript for case:', caseId);
+            const fileData = JSON.parse(savedFileData);
+            setUploadedFileData(fileData);
+            setCompletedSteps([1]);
+            setCurrentStep(2);
+            console.log('✅ Loaded existing transcript from localStorage for case:', caseId);
+          } else {
+            // If no localStorage data, check database for existing transcriptions
+            console.log('🔍 Checking database for existing transcriptions for case:', caseId);
+            
+            try {
+              const response = await fetch(`/api/transcriptions?caseId=${caseId}&limit=1`);
+              if (response.ok) {
+                const data = await response.json();
+                
+                if (data.success && data.data && data.data.length > 0) {
+                  const transcription = data.data[0];
+                  console.log('📄 Found database transcription:', transcription.file_name);
+                  
+                  // Convert database transcription to uploadedFileData format
+                  const analysisResult = transcription.analysis_result || {};
+                  const fileData = {
+                    fileName: transcription.file_name,
+                    fileSize: transcription.file_size || 0,
+                    duration: analysisResult.duration_seconds ? `${Math.floor(analysisResult.duration_seconds / 60)}:${(analysisResult.duration_seconds % 60).toString().padStart(2, '0')}` : '0:00',
+                    transcription: transcription.transcript || transcription.transcription_text || 'No transcription available',
+                    language: 'eng',
+                    speakers: analysisResult.speakers || [],
+                    speakerCount: analysisResult.speaker_count || 0,
+                    conversationId: transcription.id,
+                    transcriptionProvider: 'Database',
+                    s3Key: transcription.s3_url || null
+                  };
+                  
+                  debugLog.success('Workflow', 'Loaded existing transcription from database', {
+                    fileName: fileData.fileName,
+                    duration: fileData.duration,
+                    transcriptionLength: fileData.transcription.length,
+                    speakerCount: fileData.speakerCount
+                  });
+                  
+                  setUploadedFileData(fileData);
+                  setCompletedSteps([1]);
+                  setCurrentStep(2);
+                  
+                  // Save to localStorage for future use
+                  localStorage.setItem(`workflow_file_data_${caseId}`, JSON.stringify(fileData));
+                  console.log('✅ Loaded transcription from database and saved to localStorage');
+                } else {
+                  debugLog.info('Workflow', `No transcriptions found for case: ${caseId} - will show upload screen`);
+                  console.log('📭 No transcriptions found in database for case:', caseId);
+                }
+              } else {
+                debugLog.error('Workflow', 'Failed to fetch transcriptions from database');
+                console.error('❌ Failed to fetch transcriptions from database');
+              }
+            } catch (dbError) {
+              debugLog.error('Workflow', 'Error fetching transcriptions from database', dbError);
+              console.error('❌ Error fetching transcriptions from database:', dbError);
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error loading case transcriptions:', error);
+        }
+      }
+    };
+
+    window.addEventListener('switchToWorkflow', handleSwitchToWorkflow);
+    return () => {
+      window.removeEventListener('switchToWorkflow', handleSwitchToWorkflow);
+    };
+  }, []);
 
   const handleStepComplete = (stepNumber: number) => {
     if (!completedSteps.includes(stepNumber)) {
@@ -58,8 +627,75 @@ export default function WorkflowPage() {
   };
 
   const handleFileUploadComplete = (fileData: any) => {
+    // Enhanced logging for development
+    if (process.env.NODE_ENV === 'development') {
+      console.group('📋 FileUpload Completed Successfully');
+      console.log('File Name:', fileData.fileName);
+      console.log('File Size:', `${(fileData.fileSize / 1024 / 1024).toFixed(2)}MB`);
+      console.log('Duration:', fileData.duration);
+      console.log('Transcription Length:', fileData.transcription?.length || 0, 'characters');
+      console.log('Speakers Detected:', fileData.speakerCount || 0);
+      console.log('Language:', fileData.language || 'Unknown');
+      console.log('Has Transcription:', !!fileData.transcription);
+      console.groupEnd();
+    } else {
+      // Production logging - minimal
+      console.log('📋 FileUpload completed:', fileData.fileName);
+    }
+    
+    // Set the uploaded file data - this will trigger a re-render
     setUploadedFileData(fileData);
+    
+    // Store case ID if this upload created one
+    if (fileData.caseId && fileData.caseId !== 'none' && !currentCaseId) {
+      setCurrentCaseId(fileData.caseId);
+      localStorage.setItem('workflow_case_id', fileData.caseId);
+      console.log('🆔 New case ID created and set:', fileData.caseId);
+      debugLog.success('Workflow', 'Case created automatically during file upload', { caseId: fileData.caseId });
+    }
+    
+    // Mark step as complete after state is set
     handleStepComplete(1);
+    
+    // CRITICAL: Automatically expand Step 1 to show the completed transcription
+    setExpandedStep(1);
+    console.log('🔍 Automatically expanding Step 1 to show transcript');
+    
+    // Ensure we're on the workflow tab
+    setActiveTab('workflow');
+    console.log('📂 Switched to workflow tab to show results');
+  };
+
+  // Create a test case for the workflow demo
+  const createTestCase = async () => {
+    try {
+      const response = await fetch('/api/cases', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          case_name: 'Workflow Demo Case',
+          case_type: 'constitutional',
+          court_level: 'supreme',
+          constitutional_question: 'Religious liberty and vaccination mandates',
+          client_type: 'individual',
+          jurisdiction: 'federal'
+        })
+      });
+      
+      if (response.ok) {
+        const caseData = await response.json();
+        console.log('✅ Test case created:', caseData.id);
+        return caseData.id;
+      } else {
+        console.error('❌ Failed to create test case');
+        return null;
+      }
+    } catch (error) {
+      console.error('❌ Error creating test case:', error);
+      return null;
+    }
   };
 
   const handleStepClick = (stepId: number) => {
@@ -536,14 +1172,46 @@ export default function WorkflowPage() {
     return completedSteps.includes(stepNumber) || stepNumber === currentStep;
   };
 
+  // Show loading state while data is being restored
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading workflow data...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="py-6">
-            <h1 className="text-3xl font-bold text-gray-900">Supreme Court Brief Writing Tool</h1>
-            <p className="mt-2 text-gray-600">AI-powered legal brief generation for constitutional cases</p>
+          <div className="py-6 flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Supreme Court Brief Writing Tool</h1>
+              <p className="mt-2 text-gray-600">AI-powered legal brief generation for constitutional cases</p>
+              {currentCaseId && (
+                <p className="text-sm text-blue-600 mt-1">Active Case ID: {currentCaseId}</p>
+              )}
+            </div>
+            <div className="flex space-x-3">
+              {(uploadedFileData || currentCaseId) && (
+                <button
+                  onClick={() => {
+                    if (confirm('Clear all workflow data and start fresh?')) {
+                      localStorage.clear();
+                      window.location.reload();
+                    }
+                  }}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors text-sm"
+                >
+                  Clear Session
+                </button>
+              )}
+            </div>
           </div>
           
           {/* Tab Navigation */}
@@ -562,19 +1230,19 @@ export default function WorkflowPage() {
               </div>
             </button>
             
-            <button
-              onClick={() => setActiveTab('transcriptions')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'transcriptions'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <Database className="w-4 h-4" />
-                <span>Saved Transcriptions</span>
-              </div>
-            </button>
+                          <button
+                onClick={() => setActiveTab('cases')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'cases'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center space-x-2">
+                  <Gavel className="w-4 h-4" />
+                  <span>Open Cases</span>
+                </div>
+              </button>
           </div>
         </div>
       </div>
@@ -722,6 +1390,15 @@ export default function WorkflowPage() {
                           
                           {/* Step-specific UI components with real data */}
                           {step.id === 1 && (
+                            <WorkflowStep1
+                              caseId={currentCaseId}
+                              onTranscriptionComplete={handleFileUploadComplete}
+                              isCompleted={completedSteps.includes(1)}
+                              uploadedFileData={uploadedFileData}
+                            />
+                          )}
+                          
+                          {step.id === 999 && ( // Disabled old step 1
                             <div className="space-y-4">
                               {step.id === currentStep ? (
                                 // Show FileUpload for current step
@@ -738,24 +1415,82 @@ export default function WorkflowPage() {
                                     onUploadComplete={handleFileUploadComplete}
                                     acceptedTypes=".mp3,.wav,.m4a,.mp4,.mov,.webm"
                                     maxSizeMB={50} // 50MB (Supabase free tier limit)
-                                    caseId="workflow-demo" // Add caseId for file organization
+                                    // No caseId - we'll create a case dynamically if needed
                                   />
 
                                   {uploadedFileData && (
-                                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                      <h4 className="font-semibold text-green-900 mb-2">✓ Transcription Complete</h4>
+                                    <div key={`transcription-${forceRender}`} className="bg-green-50 border border-green-200 rounded-lg p-4 animate-in slide-in-from-bottom duration-500">
+                                      <h4 className="font-semibold text-green-900 mb-2 flex items-center">
+                                        <CheckCircle className="w-5 h-5 mr-2" />
+                                        Transcription Complete
+                                      </h4>
+
                                       <div className="text-sm text-green-700 space-y-1">
                                         <p><strong>File:</strong> {uploadedFileData.fileName}</p>
                                         <p><strong>Duration:</strong> {uploadedFileData.duration}</p>
                                         <p><strong>Language:</strong> {uploadedFileData.language}</p>
                                         <p><strong>Speakers Identified:</strong> {uploadedFileData.speakerCount}</p>
+                                        {uploadedFileData.transcriptionProvider && (
+                                          <p><strong>Transcription Service:</strong> {uploadedFileData.transcriptionProvider}</p>
+                                        )}
                                         {uploadedFileData.s3Key && (
                                           <p><strong>File Saved:</strong> ✓ Yes (Supabase Storage)</p>
                                         )}
                                         {uploadedFileData.conversationId && (
                                           <p><strong>Database Record:</strong> ✓ Yes</p>
                                         )}
+                                        {!uploadedFileData.conversationId && (
+                                          <p><strong>Database Record:</strong> ⚠️ Failed (using local data)</p>
+                                        )}
                                       </div>
+                                      
+
+                                      {uploadedFileData.transcription && (
+                                        <div className="mt-4 border-t border-green-300 pt-4">
+                                          <h5 className="font-semibold text-green-900 mb-2">📝 Full Transcript:</h5>
+                                          <div className="bg-white border border-green-200 rounded p-4 max-h-96 overflow-y-auto text-sm text-gray-700 font-mono leading-relaxed">
+                                            {uploadedFileData.transcription}
+                                          </div>
+                                          <div className="flex items-center justify-between mt-2">
+                                            <p className="text-xs text-green-600">
+                                              Total: {uploadedFileData.transcription.length.toLocaleString()} characters
+                                            </p>
+                                            <button
+                                              onClick={() => {
+                                                navigator.clipboard.writeText(uploadedFileData.transcription);
+                                                // Add a simple toast notification
+                                                const toast = document.createElement('div');
+                                                toast.textContent = 'Transcript copied to clipboard!';
+                                                toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50';
+                                                document.body.appendChild(toast);
+                                                setTimeout(() => document.body.removeChild(toast), 2000);
+                                              }}
+                                              className="text-xs text-blue-600 hover:text-blue-700 underline"
+                                            >
+                                              Copy to Clipboard
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      
+                                      {/* Display speaker information */}
+                                      {uploadedFileData.speakers && uploadedFileData.speakers.length > 0 && (
+                                        <div className="mt-4 border-t border-green-300 pt-4">
+                                          <h5 className="font-semibold text-green-900 mb-2">👥 Speakers Detected:</h5>
+                                          <div className="grid grid-cols-2 gap-2">
+                                            {uploadedFileData.speakers.map((speaker: any, index: number) => (
+                                              <div key={index} className="bg-white border border-green-200 rounded p-2 text-xs">
+                                                <strong>{speaker.name || `Speaker ${index + 1}`}</strong>
+                                                {speaker.segments && (
+                                                  <p className="text-gray-600">{speaker.segments} segments</p>
+                                                )}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                      
                                       <div className="mt-4">
                                         <button
                                           onClick={() => handleStepComplete(1)}
@@ -806,68 +1541,139 @@ export default function WorkflowPage() {
 
                           {step.id === 2 && (
                             <div className="space-y-6">
-                              {/* Basic Case Information */}
-                              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                                <h3 className="font-semibold text-gray-900 mb-4">Basic Case Information</h3>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">Case Name</label>
-                                    <input
-                                      type="text"
-                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                      placeholder="e.g., Miller v. McDonald"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">Court Level</label>
-                                    <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                                      <option>Supreme Court</option>
-                                      <option>Circuit Court</option>
-                                      <option>District Court</option>
-                                    </select>
-                                  </div>
-                                  <div className="md:col-span-2">
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">Constitutional Question</label>
-                                    <textarea
-                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                      rows={3}
-                                      placeholder="State the constitutional question at issue..."
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Citation Research Component */}
-                              <CitationResearch
-                                onDocumentsSelected={setSelectedDocuments}
-                                onSummariesGenerated={setDocumentSummaries}
+                              {/* AI-Powered Case Information Input */}
+                              <CaseInformationInput
+                                transcript={uploadedFileData?.transcription}
+                                autoAnalyze={true}
+                                onCaseInfoComplete={async (caseInfo) => {
+                                  setCaseInformation(caseInfo);
+                                  console.log('📋 Case information completed:', caseInfo);
+                                  
+                                  // Save case information to database
+                                  if (currentCaseId) {
+                                    try {
+                                      console.log('💾 Saving case information to database...');
+                                      
+                                      const response = await fetch(`/api/cases?id=${currentCaseId}`, {
+                                        method: 'PUT',
+                                        headers: {
+                                          'Content-Type': 'application/json',
+                                        },
+                                        body: JSON.stringify({
+                                          case_name: caseInfo.caseName,
+                                          court_level: caseInfo.courtLevel,
+                                          constitutional_question: caseInfo.constitutionalQuestion,
+                                          penalties: caseInfo.penalties,
+                                          precedent_target: caseInfo.targetPrecedent,
+                                          current_step: 2,
+                                          status: 'case_info_complete'
+                                        })
+                                      });
+                                      
+                                      if (response.ok) {
+                                        const savedCase = await response.json();
+                                        console.log('✅ Case information saved to database:', savedCase.case?.case_name);
+                                        
+                                        // Save AI analysis to localStorage as backup
+                                        if (caseInfo.analysis) {
+                                          localStorage.setItem(`case_analysis_${currentCaseId}`, JSON.stringify({
+                                            ...caseInfo.analysis,
+                                            confidence: caseInfo.confidence,
+                                            saved_at: new Date().toISOString()
+                                          }));
+                                          console.log('📋 AI analysis saved to localStorage as backup');
+                                        }
+                                      } else {
+                                        const errorData = await response.json();
+                                        console.error('❌ Failed to save case information:', errorData);
+                                        
+                                        // Still save to localStorage if database fails
+                                        localStorage.setItem(`case_info_${currentCaseId}`, JSON.stringify(caseInfo));
+                                        console.log('💾 Case info saved to localStorage as fallback');
+                                      }
+                                    } catch (error) {
+                                      console.error('❌ Error saving case information:', error);
+                                      
+                                      // Save to localStorage as fallback
+                                      localStorage.setItem(`case_info_${currentCaseId}`, JSON.stringify(caseInfo));
+                                      console.log('💾 Case info saved to localStorage as fallback');
+                                    }
+                                  }
+                                  
+                                  // Show completion status
+                                  const toast = document.createElement('div');
+                                  toast.textContent = '✅ Case Information Analysis Complete & Saved!';
+                                  toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg z-50 font-medium';
+                                  document.body.appendChild(toast);
+                                  setTimeout(() => {
+                                    if (document.body.contains(toast)) {
+                                      document.body.removeChild(toast);
+                                    }
+                                  }, 3000);
+                                  
+                                  // Auto-advance to next step
+                                  setTimeout(() => {
+                                    handleStepComplete(2);
+                                  }, 1000);
+                                }}
                               />
 
-                              {/* Document Summaries Display */}
-                              {documentSummaries.length > 0 && (
+                              {/* Show when case info is completed */}
+                              {caseInformation && (
                                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                  <h4 className="font-semibold text-green-900 mb-2">✓ Document Analysis Complete</h4>
-                                  <p className="text-sm text-green-700">
-                                    {documentSummaries.length} documents analyzed and summarized for case context.
-                                  </p>
-                                </div>
-                              )}
-
-                              {/* Selected Documents Count */}
-                              {selectedDocuments.length > 0 && (
-                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                  <h4 className="font-semibold text-blue-900 mb-2">Selected Documents</h4>
-                                  <p className="text-sm text-blue-700">
-                                    {selectedDocuments.length} documents selected for brief generation.
-                                  </p>
+                                  <h4 className="font-semibold text-green-900 mb-2 flex items-center">
+                                    <CheckCircle className="w-5 h-5 mr-2" />
+                                    Case Information Complete
+                                  </h4>
+                                  <div className="text-sm text-green-700 space-y-1">
+                                    <p><strong>Case:</strong> {caseInformation.caseName}</p>
+                                    <p><strong>Court:</strong> {caseInformation.courtLevel}</p>
+                                    {caseInformation.confidence && (
+                                      <p><strong>AI Confidence:</strong> {Math.round(caseInformation.confidence * 100)}%</p>
+                                    )}
+                                  </div>
+                                  
                                   <div className="mt-4">
                                     <button
                                       onClick={() => handleStepComplete(2)}
-                                      className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
+                                      className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center"
                                     >
-                                      Continue to Legal Research <ChevronRight className="w-4 h-4 ml-1 inline" />
+                                      Continue to Legal Research <ChevronRight className="w-4 h-4 ml-1" />
                                     </button>
                                   </div>
+                                </div>
+                              )}
+
+                              {/* Citation Research Component - Show after case info is complete */}
+                              {caseInformation && (
+                                <div className="space-y-4">
+                                  <div className="border-t border-gray-200 pt-6">
+                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Legal Research & Citations</h3>
+                                    <CitationResearch
+                                      onDocumentsSelected={setSelectedDocuments}
+                                      onSummariesGenerated={setDocumentSummaries}
+                                    />
+                                  </div>
+
+                                  {/* Document Summaries Display */}
+                                  {documentSummaries.length > 0 && (
+                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                      <h4 className="font-semibold text-blue-900 mb-2">✓ Document Analysis Complete</h4>
+                                      <p className="text-sm text-blue-700">
+                                        {documentSummaries.length} documents analyzed and summarized for case context.
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {/* Selected Documents Count */}
+                                  {selectedDocuments.length > 0 && (
+                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                      <h4 className="font-semibold text-blue-900 mb-2">Selected Documents</h4>
+                                      <p className="text-sm text-blue-700">
+                                        {selectedDocuments.length} documents selected for brief generation.
+                                      </p>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -892,10 +1698,13 @@ export default function WorkflowPage() {
             </div>
           </>
         ) : (
-          /* Transcriptions Tab */
-          <TranscriptionManager />
+          /* Open Cases Tab */
+          <OpenCasesManager currentCaseId={currentCaseId} onCaseSelect={setCurrentCaseId} />
         )}
       </div>
+      
+      {/* Debug Log Panel */}
+      <DebugLogPanel />
     </div>
   );
 }

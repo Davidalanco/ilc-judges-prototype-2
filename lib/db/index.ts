@@ -1,26 +1,10 @@
-import { sql } from '@vercel/postgres';
+import { createClient } from '@supabase/supabase-js';
 
-// Database connection wrapper with error handling
-export async function query(text: string, params?: any[]) {
-  try {
-    if (params) {
-      return await sql.query(text, params);
-    }
-    return await sql.query(text);
-  } catch (error) {
-    console.error('Database query error:', error);
-    throw error;
-  }
-}
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-// Convenience function for single queries
-export async function queryOne(text: string, params?: any[]) {
-  const result = await query(text, params);
-  return result.rows[0] || null;
-}
-
-// Export the sql template literal for complex queries
-export { sql } from '@vercel/postgres';
+// Create Supabase client with service role key for database operations
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 // Database utility functions
 export const db = {
@@ -31,26 +15,41 @@ export const db = {
     firm_name?: string;
     role?: string;
   }) {
-    const { rows } = await sql`
-      INSERT INTO users (email, name, firm_name, role)
-      VALUES (${userData.email}, ${userData.name || null}, ${userData.firm_name || null}, ${userData.role || 'attorney'})
-      RETURNING *
-    `;
-    return rows[0];
+    const { data, error } = await supabase
+      .from('users')
+      .insert({
+        email: userData.email,
+        name: userData.name || null,
+        firm_name: userData.firm_name || null
+        // Note: role field doesn't exist in current schema
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
   },
 
   async getUserByEmail(email: string) {
-    const { rows } = await sql`
-      SELECT * FROM users WHERE email = ${email}
-    `;
-    return rows[0] || null;
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .single();
+    
+    if (error && error.code !== 'PGRST116') throw error; // PGRST116 = not found
+    return data;
   },
 
   async getUserById(id: string) {
-    const { rows } = await sql`
-      SELECT * FROM users WHERE id = ${id}
-    `;
-    return rows[0] || null;
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
   },
 
   // Cases
@@ -65,40 +64,53 @@ export const db = {
     penalties?: string;
     precedent_target?: string;
   }) {
-    const { rows } = await sql`
-      INSERT INTO cases (
-        user_id, case_name, case_type, court_level, 
-        constitutional_question, client_type, jurisdiction, 
-        penalties, precedent_target
-      )
-      VALUES (
-        ${caseData.user_id}, ${caseData.case_name}, ${caseData.case_type || null},
-        ${caseData.court_level || null}, ${caseData.constitutional_question || null},
-        ${caseData.client_type || null}, ${caseData.jurisdiction || null},
-        ${caseData.penalties || null}, ${caseData.precedent_target || null}
-      )
-      RETURNING *
-    `;
-    return rows[0];
+    // Use actual database schema field names
+    const { data, error } = await supabase
+      .from('cases')
+      .insert({
+        user_id: caseData.user_id,
+        title: caseData.case_name, // Use title field (NOT NULL)
+        case_name: caseData.case_name, // Also populate case_name field
+        case_type: caseData.case_type || null,
+        court_level: caseData.court_level || null,
+        constitutional_question: caseData.constitutional_question || null, // This field exists
+        client_type: caseData.client_type || null, // This field exists
+        jurisdiction: caseData.jurisdiction || null, // This field exists
+        penalties: caseData.penalties || null, // This field exists
+        precedent_target: caseData.precedent_target || null, // This field exists
+        case_status: 'draft', // Use case_status field
+        status: 'draft' // Also populate status field
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
   },
 
   async getCaseById(id: string) {
-    const { rows } = await sql`
-      SELECT c.*, u.name as user_name, u.firm_name
-      FROM cases c
-      JOIN users u ON c.user_id = u.id
-      WHERE c.id = ${id}
-    `;
-    return rows[0] || null;
+    const { data, error } = await supabase
+      .from('cases')
+      .select(`
+        *,
+        users!inner(name, firm_name)
+      `)
+      .eq('id', id)
+      .single();
+    
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
   },
 
   async getCasesByUserId(userId: string) {
-    const { rows } = await sql`
-      SELECT * FROM cases 
-      WHERE user_id = ${userId}
-      ORDER BY updated_at DESC
-    `;
-    return rows;
+    const { data, error } = await supabase
+      .from('cases')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
   },
 
   async updateCase(id: string, updates: Partial<{
@@ -113,17 +125,18 @@ export const db = {
     status: string;
     current_step: number;
   }>) {
-    const setClause = Object.keys(updates)
-      .map((key, index) => `${key} = $${index + 2}`)
-      .join(', ');
+    const { data, error } = await supabase
+      .from('cases')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select()
+      .single();
     
-    const values = Object.values(updates);
-    
-    const { rows } = await sql.query(
-      `UPDATE cases SET ${setClause}, updated_at = NOW() WHERE id = $1 RETURNING *`,
-      [id, ...values]
-    );
-    return rows[0];
+    if (error) throw error;
+    return data;
   },
 
   // Attorney Conversations
@@ -134,19 +147,34 @@ export const db = {
     file_type: string;
     s3_url: string;
     duration_seconds?: number;
+    user_id?: string;
   }) {
-    const { rows } = await sql`
-      INSERT INTO attorney_conversations (
-        case_id, file_name, file_size, file_type, s3_url, duration_seconds
-      )
-      VALUES (
-        ${conversationData.case_id}, ${conversationData.file_name},
-        ${conversationData.file_size}, ${conversationData.file_type},
-        ${conversationData.s3_url}, ${conversationData.duration_seconds || null}
-      )
-      RETURNING *
-    `;
-    return rows[0];
+    // Use actual database schema field names
+    const insertData: any = {
+      case_id: conversationData.case_id,
+      user_id: conversationData.user_id || null, // This field exists but can be null
+      file_name: conversationData.file_name,
+      file_size: conversationData.file_size,
+      file_type: conversationData.file_type,
+      s3_url: conversationData.s3_url,
+      upload_status: 'completed',
+      transcription_status: 'pending',
+      status: 'uploaded' // This field exists
+    };
+    
+    // Add duration_seconds if provided (field exists in schema)
+    if (conversationData.duration_seconds) {
+      insertData.duration_seconds = conversationData.duration_seconds;
+    }
+    
+    const { data, error } = await supabase
+      .from('attorney_conversations')
+      .insert(insertData)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
   },
 
   async updateConversation(id: string, updates: Partial<{
@@ -158,111 +186,176 @@ export const db = {
     key_issues: any;
     status: string;
   }>) {
-    const setClause = Object.keys(updates)
-      .map((key, index) => `${key} = $${index + 2}`)
-      .join(', ');
+    // Use actual database schema field names
+    const dbUpdates: any = {};
     
-    const values = Object.values(updates);
+    // Update transcript in both fields (transcript and transcription_text exist)
+    if (updates.transcript) {
+      dbUpdates.transcript = updates.transcript;
+      dbUpdates.transcription_text = updates.transcript;
+      dbUpdates.transcription_status = 'completed';
+    }
     
-    const { rows } = await sql.query(
-      `UPDATE attorney_conversations SET ${setClause}, updated_at = NOW() WHERE id = $1 RETURNING *`,
-      [id, ...values]
-    );
-    return rows[0];
+    // Update individual fields that exist in schema
+    if (updates.transcript_quality !== undefined) {
+      dbUpdates.transcript_quality = updates.transcript_quality;
+    }
+    
+    if (updates.speaker_count !== undefined) {
+      dbUpdates.speaker_count = updates.speaker_count;
+    }
+    
+    if (updates.speakers) {
+      dbUpdates.speakers = updates.speakers;
+    }
+    
+    if (updates.status) {
+      dbUpdates.status = updates.status;
+    }
+    
+    // Get existing analysis_result to merge with new data
+    const { data: existingRecord } = await supabase
+      .from('attorney_conversations')
+      .select('analysis_result')
+      .eq('id', id)
+      .single();
+    
+    // Start with existing analysis_result or empty object
+    const analysisResult: any = existingRecord?.analysis_result || {};
+    
+    if (updates.analysis) {
+      // Merge existing analysis data
+      Object.assign(analysisResult, updates.analysis);
+    }
+    
+    if (updates.key_issues) {
+      analysisResult.key_topics = updates.key_issues;
+    }
+    
+    // Always set analysis_result to preserve existing data
+    dbUpdates.analysis_result = analysisResult;
+    
+    const { data, error } = await supabase
+      .from('attorney_conversations')
+      .update(dbUpdates)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
   },
 
   async getConversationsByCase(caseId: string) {
-    const { rows } = await sql`
-      SELECT * FROM attorney_conversations 
-      WHERE case_id = ${caseId}
-      ORDER BY created_at DESC
-    `;
-    return rows;
+    const { data, error } = await supabase
+      .from('attorney_conversations')
+      .select('*')
+      .eq('case_id', caseId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
   },
 
   // Justice Profiles
   async getJusticeProfiles() {
-    const { rows } = await sql`
-      SELECT * FROM justice_profiles
-      ORDER BY justice_name
-    `;
-    return rows;
+    const { data, error } = await supabase
+      .from('justice_profiles')
+      .select('*')
+      .order('name');
+    
+    if (error) throw error;
+    return data;
   },
 
   async getJusticeProfile(justiceName: string) {
-    const { rows } = await sql`
-      SELECT * FROM justice_profiles
-      WHERE justice_name = ${justiceName}
-    `;
-    return rows[0] || null;
+    const { data, error } = await supabase
+      .from('justice_profiles')
+      .select('*')
+      .eq('name', justiceName)
+      .single();
+    
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
   },
 
   // Justice Case Analysis
   async createJusticeCaseAnalysis(analysisData: {
     case_id: string;
-    justice_name: string;
+    justice_id: string;
     alignment_score: number;
     key_factors: any;
     strategy: any;
     confidence_level: string;
     persuasion_entry_points: any;
   }) {
-    const { rows } = await sql`
-      INSERT INTO justice_case_analysis (
-        case_id, justice_name, alignment_score, key_factors,
-        strategy, confidence_level, persuasion_entry_points
-      )
-      VALUES (
-        ${analysisData.case_id}, ${analysisData.justice_name},
-        ${analysisData.alignment_score}, ${JSON.stringify(analysisData.key_factors)},
-        ${JSON.stringify(analysisData.strategy)}, ${analysisData.confidence_level},
-        ${JSON.stringify(analysisData.persuasion_entry_points)}
-      )
-      RETURNING *
-    `;
-    return rows[0];
+    const { data, error } = await supabase
+      .from('justice_case_analysis')
+      .insert({
+        case_id: analysisData.case_id,
+        justice_id: analysisData.justice_id,
+        alignment_score: analysisData.alignment_score,
+        key_factors: analysisData.key_factors,
+        strategy: analysisData.strategy,
+        confidence_level: analysisData.confidence_level,
+        persuasion_entry_points: analysisData.persuasion_entry_points
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
   },
 
   async getJusticeCaseAnalysis(caseId: string) {
-    const { rows } = await sql`
-      SELECT * FROM justice_case_analysis
-      WHERE case_id = ${caseId}
-      ORDER BY justice_name
-    `;
-    return rows;
+    const { data, error } = await supabase
+      .from('justice_case_analysis')
+      .select('*')
+      .eq('case_id', caseId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
   },
 
   // Brief Section Chats
   async addBriefSectionChat(chatData: {
-    case_id: string;
+    brief_id: string;
+    user_id: string;
     section_id: string;
-    role: 'user' | 'assistant';
-    content: string;
+    message_type: 'user' | 'assistant';
+    message_content: string;
   }) {
-    const { rows } = await sql`
-      INSERT INTO brief_section_chats (case_id, section_id, role, content)
-      VALUES (${chatData.case_id}, ${chatData.section_id}, ${chatData.role}, ${chatData.content})
-      RETURNING *
-    `;
-    return rows[0];
+    const { data, error } = await supabase
+      .from('brief_section_chats')
+      .insert({
+        brief_id: chatData.brief_id,
+        user_id: chatData.user_id,
+        section_id: chatData.section_id,
+        message_type: chatData.message_type,
+        message_content: chatData.message_content
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
   },
 
-  async getBriefSectionChats(caseId: string, sectionId?: string) {
+  async getBriefSectionChats(briefId: string, sectionId?: string) {
+    let query = supabase
+      .from('brief_section_chats')
+      .select('*')
+      .eq('brief_id', briefId);
+    
     if (sectionId) {
-      const { rows } = await sql`
-        SELECT * FROM brief_section_chats
-        WHERE case_id = ${caseId} AND section_id = ${sectionId}
-        ORDER BY created_at ASC
-      `;
-      return rows;
-    } else {
-      const { rows } = await sql`
-        SELECT * FROM brief_section_chats
-        WHERE case_id = ${caseId}
-        ORDER BY created_at ASC
-      `;
-      return rows;
+      query = query.eq('section_id', sectionId);
     }
+    
+    const { data, error } = await query.order('created_at', { ascending: true });
+    
+    if (error) throw error;
+    return data;
   },
 
   // File Uploads
@@ -274,25 +367,35 @@ export const db = {
     s3_key: string;
     s3_url: string;
   }) {
-    const { rows } = await sql`
-      INSERT INTO file_uploads (user_id, file_name, file_size, file_type, s3_key, s3_url)
-      VALUES (${uploadData.user_id}, ${uploadData.file_name}, ${uploadData.file_size}, 
-              ${uploadData.file_type}, ${uploadData.s3_key}, ${uploadData.s3_url})
-      RETURNING *
-    `;
-    return rows[0];
+    const { data, error } = await supabase
+      .from('file_uploads')
+      .insert({
+        user_id: uploadData.user_id,
+        file_name: uploadData.file_name,
+        file_size: uploadData.file_size,
+        file_type: uploadData.file_type,
+        s3_key: uploadData.s3_key,
+        s3_url: uploadData.s3_url
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
   },
 
   async updateFileUploadStatus(id: string, status: string) {
-    const { rows } = await sql`
-      UPDATE file_uploads 
-      SET upload_status = ${status}
-      WHERE id = ${id}
-      RETURNING *
-    `;
-    return rows[0];
-  },
+    const { data, error } = await supabase
+      .from('file_uploads')
+      .update({ upload_status: status })
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  }
+};
 
-  // Add query method directly to db object for backward compatibility
-  query
-}; 
+// Export the Supabase client for direct access if needed
+export { supabase };

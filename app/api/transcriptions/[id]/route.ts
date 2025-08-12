@@ -15,25 +15,20 @@ export async function GET(
         file_name,
         file_size,
         file_type,
-        duration_seconds,
-        transcript,
-        speaker_count,
-        speakers,
-        analysis,
-        transcript_quality,
-        key_issues,
-        strategic_elements,
-        conversation_type,
-        processing_status,
+        s3_url,
+        transcription_text,
+        transcription_status,
+        analysis_result,
+
         created_at,
         updated_at,
         cases (
           id,
-          case_name,
+          title,
           case_type,
           court_level,
-          constitutional_question,
-          status
+          description,
+          case_status
         )
       `)
       .eq('id', params.id)
@@ -78,14 +73,21 @@ export async function PUT(
       updated_at: new Date().toISOString()
     };
 
-    // Only update provided fields
-    if (transcript !== undefined) updateData.transcript = transcript;
-    if (speakers !== undefined) updateData.speakers = speakers;
-    if (speaker_count !== undefined) updateData.speaker_count = speaker_count;
-    if (key_issues !== undefined) updateData.key_issues = key_issues;
-    if (strategic_elements !== undefined) updateData.strategic_elements = strategic_elements;
-    if (conversation_type !== undefined) updateData.conversation_type = conversation_type;
-    if (transcript_quality !== undefined) updateData.transcript_quality = transcript_quality;
+    // Only update provided fields using correct database schema
+    if (transcript !== undefined) {
+      updateData.transcription_text = transcript;
+      updateData.transcription_status = 'completed';
+    }
+    
+    // Build analysis_result object
+    const analysisUpdates: any = {};
+    if (speakers !== undefined) analysisUpdates.speakers = speakers;
+    if (speaker_count !== undefined) analysisUpdates.speaker_count = speaker_count;
+    if (key_issues !== undefined) analysisUpdates.key_topics = key_issues;
+    
+    if (Object.keys(analysisUpdates).length > 0) {
+      updateData.analysis_result = analysisUpdates;
+    }
 
     const { data, error } = await supabaseAdmin
       .from('attorney_conversations')

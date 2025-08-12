@@ -39,8 +39,7 @@ export const uploadFile = async (
   options?: { upsert?: boolean; metadata?: Record<string, any>; contentType?: string }
 ) => {
   if (isUsingMockDatabase) {
-    console.warn('Mock database: file upload skipped');
-    return { data: null, error: { message: 'Mock database - no actual upload' } };
+    throw new Error('MOCK DATABASE DETECTED - Real Supabase connection required for file uploads');
   }
 
   try {
@@ -62,7 +61,12 @@ export const uploadFile = async (
       try {
         const { data, error } = await supabaseAdmin.storage.createBucket(bucket, {
           public: true,
-          allowedMimeTypes: ['audio/*', 'video/*', 'application/*', 'text/*', 'text/*'],
+          allowedMimeTypes: [
+            'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/m4a', 
+            'audio/x-m4a', 'audio/aac', 'audio/ogg', 'audio/webm', 'audio/flac',
+            'video/mp4', 'video/mov', 'video/webm', 'video/quicktime',
+            'application/octet-stream', 'text/*', 'image/*'
+          ],
           fileSizeLimit: 50 * 1024 * 1024 // 50MB (Supabase free tier limit)
         });
         
@@ -121,26 +125,7 @@ export const uploadFile = async (
   }
 }
 
-// Fallback storage for when Supabase fails
-export const uploadFileFallback = async (
-  bucket: 'audio-files' | 'documents' | 'exports',
-  filePath: string,
-  file: File | Buffer,
-  options?: { upsert?: boolean; metadata?: Record<string, any>; contentType?: string }
-) => {
-  console.log('Using fallback storage (local file system simulation)');
-  
-  // Simulate successful upload for development
-  const mockData = {
-    path: filePath,
-    id: `fallback-${Date.now()}`,
-    size: file instanceof File ? file.size : Buffer.byteLength(file),
-    metadata: options?.metadata || {},
-    created_at: new Date().toISOString()
-  };
-  
-  return { data: mockData, error: null };
-}
+// REMOVED: uploadFileFallback function - no more fallbacks, show real errors
 
 export const downloadFile = async (
   bucket: 'audio-files' | 'documents' | 'exports',

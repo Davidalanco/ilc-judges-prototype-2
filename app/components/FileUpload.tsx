@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { Upload, FileAudio, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { debugLog } from '@/app/components/DebugLogPanel';
 // Supabase upload handled via server-side API to avoid client-side environment variable issues
 
 interface FileUploadProps {
@@ -85,6 +86,7 @@ export default function FileUpload({
   };
 
   const uploadFileToSupabase = async (file: File) => {
+    debugLog.info('File Upload', `Starting upload for ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
     try {
       setUploadProgress({
         fileName: file.name,
@@ -98,6 +100,7 @@ export default function FileUpload({
       formData.append('file', file);
       if (caseId) {
         formData.append('caseId', caseId);
+        debugLog.info('File Upload', `Upload associated with case ID: ${caseId}`);
       }
 
       // Send directly to transcription API with animated progress
@@ -120,6 +123,11 @@ export default function FileUpload({
 
       let response;
       try {
+        debugLog.api('File Upload', 'POST /api/transcribe-direct', { 
+          fileName: file.name, 
+          fileSize: file.size, 
+          caseId: caseId || 'none' 
+        });
         response = await fetch('/api/transcribe-direct', {
           method: 'POST',
           body: formData
@@ -129,11 +137,33 @@ export default function FileUpload({
         clearInterval(progressInterval);
       }
 
-      const result = await response.json();
-
       if (!response.ok) {
-        throw new Error(result.error || 'Transcription failed');
+        let errorMessage = 'Transcription failed';
+        try {
+          const result = await response.json();
+          errorMessage = result.error || errorMessage;
+          debugLog.error('File Upload', `Upload failed: ${errorMessage}`, result);
+          
+          // Handle specific error types
+          if (response.status === 429) {
+            errorMessage = 'ElevenLabs API is currently busy. Please try again in a few minutes.';
+          }
+        } catch (jsonError) {
+          // If we can't parse the JSON, use the status text
+          errorMessage = `Server error (${response.status}): ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
+
+      const result = await response.json();
+      
+      debugLog.success('File Upload', 'Upload completed successfully!', result);
+      
+      // Debug the API response structure
+      console.log('🔍 Full API Response:', result);
+      console.log('🔍 Result.data:', result.data);
+      console.log('🔍 Result.data.conversationId:', result.data?.conversationId);
+      console.log('🔍 Result.data.caseId:', result.data?.caseId);
 
       setUploadProgress(prev => prev ? {
         ...prev,
@@ -163,12 +193,31 @@ export default function FileUpload({
           speakers: transcriptionData.speakers || [],
           speakerCount: transcriptionData.speakerCount || 0,
           s3Key: transcriptionData.s3Key,
-          conversationId: transcriptionData.conversationId
+          conversationId: transcriptionData.conversationId,
+          caseId: transcriptionData.caseId
         });
       }
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Upload failed';
+      
+      debugLog.error('File Upload', 'Upload failed with error', {
+        error: errorMessage,
+        fileName: file.name,
+        fileSize: file.size,
+        fileSizeMB: `${(file.size / 1024 / 1024).toFixed(2)}MB`,
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      
+      // Enhanced error logging for development
+      if (process.env.NODE_ENV === 'development') {
+        console.group('❌ FileUpload Error');
+        console.error('Error details:', error);
+        console.log('File name:', file.name);
+        console.log('File size:', `${(file.size / 1024 / 1024).toFixed(2)}MB`);
+        console.log('Error message:', errorMessage);
+        console.groupEnd();
+      }
       
       setUploadProgress(prev => prev ? {
         ...prev,

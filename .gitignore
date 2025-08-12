@@ -7,3 +7,28 @@ node_modules
 dist
 build
 .env*.local
+
+# Database migration and test files
+*.sql
+*-migration.js
+*-database*.js
+*schema*.js
+test-*.js
+setup-*.js
+clear-*.js
+check-*.js
+fix-*.js
+describe-*.js
+detailed-*.js
+direct-*.js
+migrate-*.js
+add-*.js
+pg-*.js
+run-*.sh
+supabase_setup.sql
+supabase-sql-migration.js
+SIMPLE_SQL_TO_RUN.sql
+
+# Test API endpoints  
+app/api/test-*/
+

@@ -574,11 +574,7 @@ class CourtListenerAPI {
           authors: [],
           isSelected: false,
           cluster,
-          opinion: typeof opinionRef === 'object' ? opinionRef : { 
-            id: opinionId, 
-            resource_uri: typeof opinionRef === 'string' ? opinionRef : '',
-            cluster: cluster.id
-          }
+          opinion: typeof opinionRef === 'object' ? opinionRef : undefined
         });
       });
     } else if (cluster.opinions && cluster.opinions.length > 0) {
@@ -598,7 +594,7 @@ class CourtListenerAPI {
           authors: [],
           isSelected: false,
           cluster,
-          opinion: { id: opinionId, cluster: cluster.id }
+          opinion: undefined
         });
       });
     } else {
@@ -617,7 +613,7 @@ class CourtListenerAPI {
         authors: [],
         isSelected: false,
         cluster,
-        opinion: null
+        opinion: undefined
       });
     }
 
@@ -683,9 +679,9 @@ class CourtListenerAPI {
         // Add other required properties with default values
         neutral_cite: '',
         scdb_id: '',
-        scdb_decision_direction: null,
-        scdb_votes_majority: null,
-        scdb_votes_minority: null,
+        scdb_decision_direction: 0,
+        scdb_votes_majority: 0,
+        scdb_votes_minority: 0,
         source: 'C',
         procedural_history: '',
         attorneys: '',
@@ -701,13 +697,12 @@ class CourtListenerAPI {
         correction: '',
         citation_count: 0,
         precedential_status: 'Published',
-        date_blocked: null,
+        date_blocked: '',
         blocked: false,
-        filepath_json_harvard: '',
         sub_opinions: [],
         docket: 1,
-        judges: [],
-        opinion_set: [1]
+        opinions: [1],
+        citations: []
       }];
     }
     

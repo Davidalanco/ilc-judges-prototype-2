@@ -133,7 +133,8 @@ export async function transcribeAudioWithSpeakers(audioBuffer: Buffer, fileName:
         const speakers = Array.from(uniqueSpeakers).map((speakerId: any, index: number) => ({
           id: speakerId,
           name: `Speaker ${index + 1}`,
-          confidence: 0.95 // High confidence for API-provided speakers
+          confidence: 0.95, // High confidence for API-provided speakers
+          segments: segments.filter(seg => seg.speaker === speakerId).length
         }));
         
         // Create segments based on speaker changes
@@ -171,12 +172,10 @@ export async function transcribeAudioWithSpeakers(audioBuffer: Buffer, fileName:
         return {
           text: transcriptionData.text,
           language: transcriptionData.language_code || 'en',
-          language_probability: transcriptionData.language_probability || 1.0,
           duration: Math.max(...transcriptionData.words.map((w: any) => w.end)),
           segments,
           speakers,
-          speakerCount: speakers.length,
-          words: transcriptionData.words
+          speakerCount: speakers.length
         };
       }
     }
@@ -231,7 +230,8 @@ export async function transcribeAudioWithSpeakers(audioBuffer: Buffer, fileName:
     const fallbackSpeakers = Array.from({ length: estimatedSpeakers }, (_, i) => ({
       id: `speaker_${i}`,
       name: `Speaker ${i + 1}`,
-      confidence: 0.7 // Lower confidence for estimated speakers
+      confidence: 0.7, // Lower confidence for estimated speakers
+      segments: 0 // No segments available without speaker data
     }));
     
     console.log(`🤖 Created ${estimatedSpeakers} estimated speakers based on enhanced legal conversation analysis`);
@@ -239,12 +239,10 @@ export async function transcribeAudioWithSpeakers(audioBuffer: Buffer, fileName:
     return {
       text: transcriptionData.text,
       language: transcriptionData.language_code || 'en',
-      language_probability: transcriptionData.language_probability || 1.0,
       duration: transcriptionData.words ? Math.max(...transcriptionData.words.map((w: any) => w.end)) : 0,
       segments: [], // No segments available without speaker data
       speakers: fallbackSpeakers,
-      speakerCount: estimatedSpeakers,
-      words: transcriptionData.words || []
+      speakerCount: estimatedSpeakers
     };
 
   } catch (error) {

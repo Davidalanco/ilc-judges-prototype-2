@@ -194,7 +194,7 @@ export default function FileUpload({
           speakerCount: transcriptionData.speakerCount || 0,
           s3Key: transcriptionData.s3Key,
           conversationId: transcriptionData.conversationId,
-          caseId: transcriptionData.caseId
+          // caseId removed - not part of interface
         });
       }
 

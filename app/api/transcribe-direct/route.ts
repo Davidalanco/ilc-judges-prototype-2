@@ -283,7 +283,7 @@ export async function POST(request: NextRequest) {
               duration: transcriptionResult.duration,
               segments: transcriptionResult.segments
             },
-            key_issues: transcriptionResult.keyIssues || [],
+            key_issues: [], // Key issues analysis would be added later
             status: 'completed'
           });
           

@@ -91,6 +91,9 @@ class LexisNexisAPI {
     this.accessToken = data.access_token;
     this.tokenExpiry = new Date(Date.now() + (data.expires_in * 1000));
     
+    if (!this.accessToken) {
+      throw new Error('Failed to obtain access token');
+    }
     return this.accessToken;
   }
 
@@ -521,4 +524,4 @@ export class ProfessionalLegalSearch {
   }
 }
 
-export { ProfessionalCaseDocument, CitationAnalysis, LegalSearchConfig }; 
+export type { ProfessionalCaseDocument, CitationAnalysis, LegalSearchConfig }; 

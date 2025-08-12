@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
-import { db } from '@/lib/db';
-import { supabase } from '@/lib/supabase';
+import { db, supabase } from '@/lib/db';
 import '@/types/auth';
 
 export async function POST(request: NextRequest) {
@@ -45,14 +44,15 @@ export async function POST(request: NextRequest) {
 
     // If uploadId provided, link the file upload to this case
     if (uploadId) {
-      // Get the file upload
-      const uploadResult = await db.query(
-        'SELECT * FROM file_uploads WHERE id = $1 AND user_id = $2',
-        [uploadId, '00000000-0000-0000-0000-000000000001']
-      );
+      // Get the file upload using Supabase
+      const { data: uploads, error: uploadError } = await supabase
+        .from('file_uploads')
+        .select('*')
+        .eq('id', uploadId)
+        .eq('user_id', '00000000-0000-0000-0000-000000000001');
 
-      if (uploadResult.rows.length > 0) {
-        const upload = uploadResult.rows[0];
+      if (!uploadError && uploads && uploads.length > 0) {
+        const upload = uploads[0];
         
         // Create conversation record
         await db.createConversation({

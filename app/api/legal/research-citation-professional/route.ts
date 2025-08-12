@@ -97,7 +97,8 @@ export async function POST(request: NextRequest) {
     console.error('Professional citation research error:', error);
 
     // If professional APIs fail, suggest fallback
-    if (error.message.includes('authentication') || error.message.includes('401')) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes('authentication') || errorMessage.includes('401')) {
       return NextResponse.json({
         error: 'Professional API authentication failed',
         suggestion: 'Please check your LexisNexis/Westlaw API credentials',
@@ -106,7 +107,7 @@ export async function POST(request: NextRequest) {
       }, { status: 401 });
     }
 
-    if (error.message.includes('quota') || error.message.includes('rate limit')) {
+    if (errorMessage.includes('quota') || errorMessage.includes('rate limit')) {
       return NextResponse.json({
         error: 'Professional API usage limit reached',
         suggestion: 'Please check your LexisNexis/Westlaw API usage limits',
@@ -118,7 +119,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { 
         error: 'Professional citation research failed',
-        details: error.message,
+        details: errorMessage,
         fallbackUrl: '/api/legal/research-citation',
         isProfessional: false,
       },

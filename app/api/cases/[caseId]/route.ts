@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
-import { db } from '@/lib/db';
+import { db, supabase } from '@/lib/db';
 import '@/types/auth';
 
 export async function GET(
@@ -125,8 +125,16 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
-    // Delete the case (CASCADE will handle related records)
-    await db.query('DELETE FROM cases WHERE id = $1', [caseId]);
+    // Delete the case using Supabase client (CASCADE will handle related records)
+    const { error: deleteError } = await supabase
+      .from('cases')
+      .delete()
+      .eq('id', caseId);
+      
+    if (deleteError) {
+      console.error('Error deleting case:', deleteError);
+      return NextResponse.json({ error: 'Failed to delete case' }, { status: 500 });
+    }
 
     return NextResponse.json({
       success: true,

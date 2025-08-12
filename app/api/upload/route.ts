@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { db } from '@/lib/db';
+import { db, supabase } from '@/lib/db';
 import '@/types/auth';
 
 // Initialize S3 client
@@ -145,12 +145,19 @@ export async function GET(request: NextRequest) {
       const conversations = await db.getConversationsByCase(caseId);
       return NextResponse.json({ conversations });
     } else {
-      // Get all file uploads for the user
-      const uploads = await db.query(
-        'SELECT * FROM file_uploads WHERE user_id = $1 ORDER BY created_at DESC',
-        [session.user.id]
-      );
-      return NextResponse.json({ uploads: uploads.rows });
+      // Get all file uploads for the user using Supabase
+      const { data: uploads, error: uploadsError } = await supabase
+        .from('file_uploads')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false });
+        
+      if (uploadsError) {
+        console.error('Error fetching uploads:', uploadsError);
+        return NextResponse.json({ error: 'Failed to fetch uploads' }, { status: 500 });
+      }
+      
+      return NextResponse.json({ uploads: uploads || [] });
     }
 
   } catch (error) {

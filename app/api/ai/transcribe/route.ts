@@ -47,11 +47,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if already transcribed
-    if (conversation.transcript && conversation.analysis) {
+    if (conversation.transcription_text && conversation.analysis_result) {
       return NextResponse.json({
         success: true,
-        transcript: conversation.transcript,
-        analysis: conversation.analysis,
+        transcript: conversation.transcription_text,
+        analysis: conversation.analysis_result,
         message: 'Already transcribed'
       });
     }

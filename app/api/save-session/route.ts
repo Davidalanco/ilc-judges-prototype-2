@@ -39,13 +39,16 @@ export async function POST(request: NextRequest) {
         user_id: userId,
         file_name: fileName,
         file_size: fileSize,
-        duration_seconds: duration,
+        file_type: 'audio/unknown',
+        s3_url: 'https://placeholder.com/audio.mp3',
+        upload_status: 'completed',
         transcription_text: transcription,
-        language_detected: language,
-        speaker_count: 1, // TODO: Implement actual speaker detection
-        conversation_type: 'strategy_session',
-        processing_status: 'completed',
-        created_at: new Date().toISOString()
+        transcription_status: 'completed',
+        analysis_result: {
+          duration_seconds: duration,
+          speaker_count: 1,
+          language: language
+        }
       })
       .select()
       .single();

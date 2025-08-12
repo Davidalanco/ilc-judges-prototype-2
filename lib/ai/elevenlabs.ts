@@ -1,4 +1,5 @@
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
+import { debugLogger, logInfo, logError, logApiCall } from '@/lib/debug-logger';
 
 // Initialize ElevenLabs client
 const elevenlabs = new ElevenLabsClient({
@@ -23,7 +24,15 @@ export interface ElevenLabsTranscriptionResult {
 
 // Transcribe audio file with speaker identification using ElevenLabs Speech to Text API
 export async function transcribeAudioWithSpeakers(audioBuffer: Buffer, fileName: string): Promise<ElevenLabsTranscriptionResult> {
+  const startTime = Date.now();
+  
   try {
+    logInfo('ElevenLabs', 'Starting transcription with speaker diarization', {
+      fileName,
+      bufferSize: audioBuffer.length,
+      bufferSizeMB: (audioBuffer.length / 1024 / 1024).toFixed(2)
+    });
+    
     // Create FormData for the API request
     const formData = new FormData();
     
@@ -38,8 +47,7 @@ export async function transcribeAudioWithSpeakers(audioBuffer: Buffer, fileName:
     // Only use officially documented parameters
     formData.append('optimize_streaming_latency', '0'); // For quality over speed
     
-    console.log('🎤 Starting ElevenLabs transcription with speaker diarization...');
-    console.log('Parameters:', {
+    logInfo('ElevenLabs', 'API parameters configured', {
       model_id: 'scribe_v1_experimental',
       optimize_streaming_latency: '0',
       file_size: `${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`,
@@ -47,6 +55,13 @@ export async function transcribeAudioWithSpeakers(audioBuffer: Buffer, fileName:
     });
 
     // Make direct API call to ElevenLabs Speech to Text endpoint
+    logApiCall('ElevenLabs', 'Making API request to ElevenLabs Speech to Text', {
+      url: 'https://api.elevenlabs.io/v1/speech-to-text',
+      method: 'POST',
+      hasApiKey: !!process.env.ELEVENLABS_API_KEY,
+      apiKeyLength: process.env.ELEVENLABS_API_KEY?.length || 0
+    });
+    
     const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
       method: 'POST',
       headers: {
@@ -57,13 +72,25 @@ export async function transcribeAudioWithSpeakers(audioBuffer: Buffer, fileName:
 
     if (!response.ok) {
       const errorText = await response.text();
+      logError('ElevenLabs', 'API response not OK', {
+        status: response.status,
+        statusText: response.statusText,
+        errorText,
+        responseHeaders: Object.fromEntries(response.headers.entries())
+      });
       throw new Error(`Speech to Text API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
+
+    logApiCall('ElevenLabs', 'API response received successfully', {
+      status: response.status,
+      statusText: response.statusText,
+      responseHeaders: Object.fromEntries(response.headers.entries())
+    });
 
     const transcriptionData = await response.json();
     
     // Enhanced debugging of response structure
-    console.log('📊 ElevenLabs response structure:', {
+    logInfo('ElevenLabs', 'Response structure analysis', {
       hasText: !!transcriptionData.text,
       hasWords: !!transcriptionData.words,
       hasSegments: !!transcriptionData.segments,
@@ -221,7 +248,12 @@ export async function transcribeAudioWithSpeakers(audioBuffer: Buffer, fileName:
     };
 
   } catch (error) {
-    console.error('Speech transcription error:', error);
+    const totalDuration = Date.now() - startTime;
+    logError('ElevenLabs', 'Speech transcription failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      totalDuration: `${totalDuration}ms`,
+      fileName
+    });
     throw new Error(`Failed to transcribe audio: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }

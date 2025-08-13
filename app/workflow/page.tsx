@@ -556,6 +556,8 @@ export default function WorkflowPage() {
   const [selectedDocuments, setSelectedDocuments] = useState<any[]>([]);
   const [documentSummaries, setDocumentSummaries] = useState<any[]>([]);
   const [briefSectionChats, setBriefSectionChats] = useState<{[key: string]: Array<{role: 'user' | 'assistant', content: string}>}>({});
+  const [justiceAnalysis, setJusticeAnalysis] = useState<any>(null);
+  const [isAnalyzingJustices, setIsAnalyzingJustices] = useState(false);
   const [chatInputs, setChatInputs] = useState<{[key: string]: string}>({});
   const [currentCaseId, setCurrentCaseId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -1525,11 +1527,51 @@ export default function WorkflowPage() {
     }
   };
 
+  // Function to analyze justices with AI
+  const analyzeJusticesWithAI = async () => {
+    if (!currentCaseId) {
+      console.error('No case ID available for justice analysis');
+      return;
+    }
+
+    setIsAnalyzingJustices(true);
+    
+    try {
+      console.log('🏛️ Starting AI justice analysis for case:', currentCaseId);
+      
+      const response = await fetch('/api/ai/analyze-justices', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          caseId: currentCaseId
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setJusticeAnalysis(result.justiceAnalysis);
+        console.log('✅ Justice analysis completed:', result.justiceAnalysis);
+      } else {
+        const error = await response.json();
+        console.error('❌ Justice analysis failed:', error);
+        // Keep static data as fallback but show it's not AI-generated
+        setJusticeAnalysis({ error: error.error || 'Failed to analyze justices', isStatic: true });
+      }
+    } catch (error) {
+      console.error('❌ Error during justice analysis:', error);
+      setJusticeAnalysis({ error: 'Failed to analyze justices', isStatic: true });
+    } finally {
+      setIsAnalyzingJustices(false);
+    }
+  };
+
   // Auto-update completed steps based on data
   React.useEffect(() => {
     const newCompletedSteps: number[] = [];
     
-    for (let i = 1; i <= 3; i++) {
+    for (let i = 1; i <= 4; i++) {
       if (isStepCompleted(i) && !completedSteps.includes(i)) {
         newCompletedSteps.push(i);
       }
@@ -1539,7 +1581,7 @@ export default function WorkflowPage() {
       setCompletedSteps(prev => [...prev, ...newCompletedSteps]);
       console.log('🎯 Auto-detected completed steps:', newCompletedSteps);
     }
-  }, [uploadedFileData, caseInformation, selectedDocuments]); // Dependencies that indicate step completion
+  }, [uploadedFileData, caseInformation, selectedDocuments, justiceAnalysis]); // Dependencies that indicate step completion
 
   const canGoBack = currentStep > 1;
   const canGoForward = currentStep < steps.length;
@@ -2074,105 +2116,106 @@ export default function WorkflowPage() {
                             <div className="space-y-6">
                               {/* Judge Profile Analysis Step */}
                               <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                                <h3 className="text-lg font-semibold text-purple-900 mb-2">⚖️ Supreme Court Justice Analysis</h3>
+                                <h3 className="text-lg font-semibold text-purple-900 mb-2">⚖️ AI-Powered Supreme Court Justice Analysis</h3>
                                 <p className="text-purple-700 text-sm">
-                                  AI automatically analyzes psychological profiles and judicial philosophies of all nine justices.
-                                  This includes detailed analysis of previous opinions, speeches, and decision patterns to identify 
-                                  their values, preferred legal frameworks, and potential pressure points for persuasion.
+                                  AI analyzes your uploaded conversation transcript and legal documents to generate case-specific 
+                                  profiles for all nine justices. This includes their likely positions on your specific constitutional 
+                                  questions, tailored persuasion strategies, and realistic voting predictions.
                                 </p>
+                                
+                                {!justiceAnalysis && !isAnalyzingJustices && (
+                                  <div className="mt-4">
+                                    <button
+                                      onClick={analyzeJusticesWithAI}
+                                      className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center"
+                                    >
+                                      <Brain className="w-4 h-4 mr-2" />
+                                      Generate AI Justice Analysis
+                                    </button>
+                                  </div>
+                                )}
+                                
+                                {isAnalyzingJustices && (
+                                  <div className="mt-4 flex items-center text-purple-700">
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-700 mr-2"></div>
+                                    Analyzing justice profiles with AI...
+                                  </div>
+                                )}
                               </div>
 
                               {/* Justice Analysis Cards */}
-                              <div className="space-y-4">
-                                <div className="bg-white rounded-lg border border-gray-200 p-6">
-                                  <h4 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
-                                    <Users className="w-6 h-6 text-purple-600 mr-2" />
-                                    Conservative-Leaning Justices
-                                  </h4>
-                                  
-                                  {/* Conservative Justices */}
-                                  <div className="grid gap-4 mb-6">
-                                    {[
-                                      {
-                                        name: "Justice Samuel A. Alito Jr.",
-                                        alignment: 95,
-                                        keyFactors: ["Religious liberty champion", "Anti-Smith sentiment", "Traditional values"],
-                                        strategy: "Emphasize historical religious persecution and constitutional text",
-                                        confidence: "Natural ally - minimal persuasion needed",
-                                        riskLevel: "minimal"
-                                      },
-                                      {
-                                        name: "Justice Neil M. Gorsuch", 
-                                        alignment: 93,
-                                        keyFactors: ["Explicit Smith critic", "Textualist approach", "Individual liberty"],
-                                        strategy: "Focus on textual meaning of Free Exercise Clause",
-                                        confidence: "Strong ally - has criticized Smith in opinions",
-                                        riskLevel: "minimal"
-                                      },
-                                      {
-                                        name: "Justice Clarence Thomas",
-                                        alignment: 90,
-                                        keyFactors: ["Originalism", "Religious liberty", "Anti-Smith inclination"],
-                                        strategy: "Historical analysis of Founding Era protections",
-                                        confidence: "Reliable vote - originalist approach favors religious liberty",
-                                        riskLevel: "low"
-                                      },
-                                      {
-                                        name: "Justice Amy Coney Barrett",
-                                        alignment: 75,
-                                        keyFactors: ["Religious liberty background", "Judicial minimalism", "Institutional concerns"],
-                                        strategy: "Emphasize narrow application to insular communities",
-                                        confidence: "Likely ally but may prefer incremental approach",
-                                        riskLevel: "medium"
-                                      },
-                                      {
-                                        name: "Justice Brett M. Kavanaugh",
-                                        alignment: 70,
-                                        keyFactors: ["Moderate conservatism", "Institutional stability", "Precedent respect"],
-                                        strategy: "Focus on limited impact to Amish communities",
-                                        confidence: "Persuadable - concerned about broader implications",
-                                        riskLevel: "medium"
-                                      }
-                                    ].map((justice, idx) => (
-                                      <div key={idx} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                                        <div className="flex items-start justify-between mb-3">
-                                          <div className="flex-1">
-                                            <div className="flex items-center mb-2">
-                                              <span className="font-semibold text-lg text-gray-900">{justice.name}</span>
-                                              <span className={`ml-3 px-2 py-1 rounded-full text-xs font-medium ${
-                                                justice.riskLevel === 'minimal' ? 'bg-green-100 text-green-800' :
-                                                justice.riskLevel === 'low' ? 'bg-green-100 text-green-700' :
-                                                'bg-yellow-100 text-yellow-800'
-                                              }`}>
-                                                {justice.riskLevel} risk
-                                              </span>
+                              {justiceAnalysis && !justiceAnalysis.error && (
+                                <div className="space-y-4">
+                                  <div className="bg-white rounded-lg border border-gray-200 p-6">
+                                    
+                                    {/* AI-Generated Conservative Justices */}
+                                    {justiceAnalysis.conservativeJustices && justiceAnalysis.conservativeJustices.length > 0 && (
+                                      <>
+                                        <h4 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
+                                          <Users className="w-6 h-6 text-purple-600 mr-2" />
+                                          Conservative-Leaning Justices
+                                          <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                                            AI Analyzed
+                                          </span>
+                                        </h4>
+                                        
+                                        <div className="grid gap-4 mb-6">
+                                          {justiceAnalysis.conservativeJustices.map((justice: any, idx: number) => (
+                                            <div key={idx} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                                              <div className="flex items-start justify-between mb-3">
+                                                <div className="flex-1">
+                                                  <div className="flex items-center mb-2">
+                                                    <span className="font-semibold text-lg text-gray-900">{justice.name}</span>
+                                                    <span className={`ml-3 px-2 py-1 rounded-full text-xs font-medium ${
+                                                      justice.riskLevel === 'minimal' ? 'bg-green-100 text-green-800' :
+                                                      justice.riskLevel === 'low' ? 'bg-green-100 text-green-700' :
+                                                      justice.riskLevel === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                                                      'bg-red-100 text-red-800'
+                                                    }`}>
+                                                      {justice.riskLevel} risk
+                                                    </span>
+                                                  </div>
+                                                  <div className="text-sm text-gray-600 mb-2">
+                                                    {justice.keyFactors?.join(" • ") || "Key factors not available"}
+                                                  </div>
+                                                  {justice.caseSpecificAnalysis && (
+                                                    <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded mt-2">
+                                                      <strong>Case-Specific:</strong> {justice.caseSpecificAnalysis}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                                <div className="text-right ml-4">
+                                                  <div className={`text-2xl font-bold ${
+                                                    justice.alignment >= 90 ? 'text-green-600' :
+                                                    justice.alignment >= 70 ? 'text-yellow-600' :
+                                                    'text-red-600'
+                                                  }`}>{justice.alignment}%</div>
+                                                  <div className="text-xs text-gray-500">Alignment</div>
+                                                </div>
+                                              </div>
+                                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div>
+                                                  <h6 className="text-sm font-medium text-gray-700 mb-1">Strategy</h6>
+                                                  <p className="text-sm text-gray-600">{justice.strategy}</p>
+                                                </div>
+                                                <div>
+                                                  <h6 className="text-sm font-medium text-gray-700 mb-1">Assessment</h6>
+                                                  <p className="text-sm text-gray-600">{justice.confidence}</p>
+                                                </div>
+                                              </div>
+                                              {justice.historicalVotes && justice.historicalVotes.length > 0 && (
+                                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                                  <h6 className="text-sm font-medium text-gray-700 mb-1">Similar Cases</h6>
+                                                  <div className="text-xs text-gray-600">
+                                                    {justice.historicalVotes.join(", ")}
+                                                  </div>
+                                                </div>
+                                              )}
                                             </div>
-                                            <div className="text-sm text-gray-600 mb-2">
-                                              {justice.keyFactors.join(" • ")}
-                                            </div>
-                                          </div>
-                                          <div className="text-right ml-4">
-                                            <div className={`text-2xl font-bold ${
-                                              justice.alignment >= 90 ? 'text-green-600' :
-                                              justice.alignment >= 70 ? 'text-yellow-600' :
-                                              'text-red-600'
-                                            }`}>{justice.alignment}%</div>
-                                            <div className="text-xs text-gray-500">Alignment</div>
-                                          </div>
+                                          ))}
                                         </div>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                          <div>
-                                            <h6 className="text-sm font-medium text-gray-700 mb-1">Strategy</h6>
-                                            <p className="text-sm text-gray-600">{justice.strategy}</p>
-                                          </div>
-                                          <div>
-                                            <h6 className="text-sm font-medium text-gray-700 mb-1">Assessment</h6>
-                                            <p className="text-sm text-gray-600">{justice.confidence}</p>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
+                                      </>
+                                    )}
 
                                   <h5 className="text-lg font-bold text-gray-900 mb-3 flex items-center">
                                     <Scale className="w-5 h-5 text-gray-600 mr-2" />

@@ -1453,7 +1453,8 @@ export default function WorkflowPage() {
   ];
 
   const getStepStatus = (stepId: number) => {
-    if (completedSteps.includes(stepId)) return 'completed';
+    // Use the enhanced completion detection
+    if (completedSteps.includes(stepId) || isStepCompleted(stepId)) return 'completed';
     if (stepId === currentStep) return 'current';
     if (stepId < currentStep) return 'available';
     return 'locked';
@@ -1488,6 +1489,52 @@ export default function WorkflowPage() {
       setExpandedStep(currentStep + 1);
     }
   };
+
+  // Function to detect if a step should be marked as completed
+  const isStepCompleted = (stepId: number) => {
+    // Check if step is already marked as completed
+    if (completedSteps.includes(stepId)) {
+      return true;
+    }
+    
+    // Auto-detect completion based on available data
+    switch (stepId) {
+      case 1:
+        // Step 1 is complete if we have transcription data
+        return !!(uploadedFileData && uploadedFileData.transcription);
+      
+      case 2:
+        // Step 2 is complete if we have case information
+        return !!(caseInformation && (
+          caseInformation.caseName ||
+          caseInformation.courtLevel ||
+          caseInformation.constitutionalQuestion
+        ));
+      
+      case 3:
+        // Step 3 is complete if we have selected documents or saved research
+        return !!(selectedDocuments && selectedDocuments.length > 0);
+      
+      default:
+        return false;
+    }
+  };
+
+  // Auto-update completed steps based on data
+  React.useEffect(() => {
+    const newCompletedSteps: number[] = [];
+    
+    for (let i = 1; i <= 3; i++) {
+      if (isStepCompleted(i) && !completedSteps.includes(i)) {
+        newCompletedSteps.push(i);
+      }
+    }
+    
+    if (newCompletedSteps.length > 0) {
+      setCompletedSteps(prev => [...prev, ...newCompletedSteps]);
+      console.log('🎯 Auto-detected completed steps:', newCompletedSteps);
+    }
+  }, [uploadedFileData, caseInformation, selectedDocuments]); // Dependencies that indicate step completion
 
   const canGoBack = currentStep > 1;
   const canGoForward = currentStep < steps.length;
@@ -1578,7 +1625,7 @@ export default function WorkflowPage() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-900">Workflow Progress</h2>
                 <div className="text-sm text-gray-600 font-medium">
-                  {completedSteps.length} of {steps.length} steps completed
+                  {steps.filter(step => completedSteps.includes(step.id) || isStepCompleted(step.id)).length} of {steps.length} steps completed
                 </div>
               </div>
               
@@ -1617,13 +1664,13 @@ export default function WorkflowPage() {
                 {steps.map((step, index) => (
                   <div key={step.id} className="flex items-center">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                      completedSteps.includes(step.id) 
+                      (completedSteps.includes(step.id) || isStepCompleted(step.id))
                         ? 'bg-green-500 text-white' 
                         : step.id === currentStep
                         ? 'bg-blue-500 text-white'
                         : 'bg-gray-300 text-gray-600'
                     }`}>
-                      {completedSteps.includes(step.id) ? (
+                      {(completedSteps.includes(step.id) || isStepCompleted(step.id)) ? (
                         <CheckCircle className="w-4 h-4" />
                       ) : (
                         step.id
@@ -1631,7 +1678,7 @@ export default function WorkflowPage() {
                     </div>
                     {index < steps.length - 1 && (
                       <div className={`w-8 h-1 mx-1 ${
-                        completedSteps.includes(step.id) ? 'bg-green-500' : 'bg-gray-300'
+                        (completedSteps.includes(step.id) || isStepCompleted(step.id)) ? 'bg-green-500' : 'bg-gray-300'
                       }`} />
                     )}
                   </div>
@@ -1641,7 +1688,7 @@ export default function WorkflowPage() {
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <div 
                   className="bg-blue-500 h-2 rounded-full transition-all duration-300" 
-                  style={{ width: `${(completedSteps.length / steps.length) * 100}%` }}
+                  style={{ width: `${(steps.filter(step => completedSteps.includes(step.id) || isStepCompleted(step.id)).length / steps.length) * 100}%` }}
                 />
               </div>
               
@@ -1678,7 +1725,7 @@ export default function WorkflowPage() {
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
-                          {completedSteps.includes(step.id) && (
+                          {(completedSteps.includes(step.id) || isStepCompleted(step.id)) && (
                             <CheckCircle className="w-6 h-6 text-green-500" />
                           )}
                           {status === 'current' && (
@@ -1693,7 +1740,7 @@ export default function WorkflowPage() {
                       </div>
                       
                       {/* Edit button for completed steps */}
-                      {completedSteps.includes(step.id) && (
+                      {(completedSteps.includes(step.id) || isStepCompleted(step.id)) && (
                         <div className="mt-2">
                           <button
                             onClick={() => goToStep(step.id)}

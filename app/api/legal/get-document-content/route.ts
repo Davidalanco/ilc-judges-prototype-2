@@ -85,19 +85,27 @@ export async function POST(request: NextRequest) {
 
         if (clusterResponse.ok) {
           const cluster = await clusterResponse.json();
+          console.log(`Cluster sub_opinions:`, cluster.sub_opinions);
           
           // Get the first sub-opinion for text content
           if (cluster.sub_opinions && cluster.sub_opinions.length > 0) {
-            const firstOpinion = cluster.sub_opinions[0];
+            const firstOpinionUrl = cluster.sub_opinions[0];
             
-            const opinionResponse = await fetch(
-              `https://www.courtlistener.com/api/rest/v3/opinions/${firstOpinion.id}/?format=json`,
-              { headers }
-            );
+            // Extract opinion ID from URL or use URL directly
+            let opinionUrl;
+            if (typeof firstOpinionUrl === 'string' && firstOpinionUrl.startsWith('https://')) {
+              opinionUrl = firstOpinionUrl;
+            } else {
+              opinionUrl = `https://www.courtlistener.com/api/rest/v3/opinions/${firstOpinionUrl.id}/?format=json`;
+            }
+            
+            console.log(`Fetching opinion from: ${opinionUrl}`);
+            const opinionResponse = await fetch(opinionUrl, { headers });
 
             if (opinionResponse.ok) {
               const opinion = await opinionResponse.json();
               fullText = opinion.plain_text || opinion.html || '';
+              console.log(`Opinion content length: ${fullText.length} characters`);
               metadata = {
                 title: `${cluster.case_name} - ${opinion.type}`,
                 author: opinion.author?.name_full || 'Unknown',

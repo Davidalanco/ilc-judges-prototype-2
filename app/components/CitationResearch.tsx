@@ -53,20 +53,27 @@ interface SearchResults {
 interface CitationResearchProps {
   onDocumentsSelected?: (documents: CaseDocument[]) => void;
   onSummariesGenerated?: (summaries: any[]) => void;
+  onDocumentSaved?: (document: CaseDocument) => void;
 }
 
-export default function CitationResearch({ onDocumentsSelected, onSummariesGenerated }: CitationResearchProps) {
+export default function CitationResearch({ onDocumentsSelected, onSummariesGenerated, onDocumentSaved }: CitationResearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
   const [selectedDocuments, setSelectedDocuments] = useState<Set<string>>(new Set());
   const [isGeneratingSummaries, setIsGeneratingSummaries] = useState(false);
+  const [isSavingDocuments, setIsSavingDocuments] = useState(false);
   const [previewDocument, setPreviewDocument] = useState<CaseDocument | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [searchMode, setSearchMode] = useState<'exact' | 'related' | 'comprehensive'>('comprehensive');
   const [searchType, setSearchType] = useState<'citation' | 'keywords'>('keywords');
   const [isRealTimeSearch, setIsRealTimeSearch] = useState(true);
   const [showHelp, setShowHelp] = useState(false);
+  const [showOnlyWithContent, setShowOnlyWithContent] = useState(false);
+  const [documentCache, setDocumentCache] = useState<Map<string, any>>(new Map());
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
+  const [lastSearchTime, setLastSearchTime] = useState<number>(0);
+  const [savingDocuments, setSavingDocuments] = useState<Set<string>>(new Set());
 
   // Debounced search for real-time filtering
   useEffect(() => {
@@ -75,11 +82,209 @@ export default function CitationResearch({ onDocumentsSelected, onSummariesGener
     }
 
     const timeoutId = setTimeout(() => {
-      performSearch();
-    }, 500); // 500ms delay after user stops typing
+      // Only perform search if query has actually changed
+      if (searchQuery.trim() !== searchResults?.citation?.original) {
+        performSearch();
+      }
+    }, 800); // Increased delay to 800ms for better performance
 
     return () => clearTimeout(timeoutId);
   }, [searchQuery, searchMode, searchType, isRealTimeSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Get cached document content or fetch if not cached
+  const getCachedDocumentContent = async (doc: CaseDocument) => {
+    const cacheKey = doc.id;
+    
+    // Check cache first
+    if (documentCache.has(cacheKey)) {
+      console.log(`📱 Using cached content for: ${doc.title}`);
+      return documentCache.get(cacheKey);
+    }
+
+    // Fetch content and cache it
+    console.log(`🔄 Fetching content for: ${doc.title}`);
+    try {
+      const contentResponse = await fetch('/api/legal/get-document-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId: doc.id })
+      });
+
+      if (contentResponse.ok) {
+        const contentData = await contentResponse.json();
+        
+        // Cache the content
+        const cachedData = {
+          fullText: contentData.fullText || '',
+          metadata: contentData.metadata || {},
+          fetchedAt: new Date().toISOString(),
+          hasContent: !!(contentData.fullText && contentData.fullText.length > 100)
+        };
+        
+        setDocumentCache(prev => new Map(prev.set(cacheKey, cachedData)));
+        console.log(`💾 Cached content for: ${doc.title} (${cachedData.fullText.length} chars)`);
+        
+        return cachedData;
+      }
+    } catch (error) {
+      console.warn(`Failed to fetch content for ${doc.id}:`, error);
+    }
+
+    return { fullText: '', metadata: {}, hasContent: false };
+  };
+
+  // Auto-save document when selected
+  const autoSaveDocument = async (doc: CaseDocument) => {
+    if (!autoSaveEnabled) return;
+
+    // Mark document as being saved
+    setSavingDocuments(prev => new Set(prev.add(doc.id)));
+
+    try {
+      console.log(`🔄 Auto-saving: ${doc.title}`);
+      
+      // Get cached content
+      const cachedContent = await getCachedDocumentContent(doc);
+      
+      // Get current case ID from workflow context or use demo values
+      const currentCaseId = localStorage.getItem('workflow_case_id') || '0ff75224-0d61-497d-ac1b-ffefdb63dba1';
+      const defaultUserId = 'a2871219-533b-485e-9ac6-effcda36a88d';
+      
+      console.log(`📂 Auto-saving to case: ${currentCaseId}`);
+
+      const saveResponse = await fetch('/api/legal/save-document', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          document: doc,
+          caseId: currentCaseId,
+          userId: defaultUserId,
+          fullText: cachedContent.fullText
+        })
+      });
+
+      if (saveResponse.ok) {
+        const saveData = await saveResponse.json();
+        console.log(`✅ Auto-saved: ${doc.title} with ${saveData.citationsFound || 0} citations`);
+        
+        // Show success notification
+        const toast = document.createElement('div');
+        toast.textContent = `✅ Saved: ${doc.title}`;
+        toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50 text-sm';
+        document.body.appendChild(toast);
+        setTimeout(() => {
+          if (document.body.contains(toast)) {
+            document.body.removeChild(toast);
+          }
+        }, 3000);
+        
+        // Notify parent component that document was saved
+        if (onDocumentSaved) {
+          onDocumentSaved(doc);
+        }
+      } else {
+        console.warn(`Failed to auto-save: ${doc.title}`);
+        
+        // Show error notification
+        const toast = document.createElement('div');
+        toast.textContent = `❌ Failed to save: ${doc.title}`;
+        toast.className = 'fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded shadow-lg z-50 text-sm';
+        document.body.appendChild(toast);
+        setTimeout(() => {
+          if (document.body.contains(toast)) {
+            document.body.removeChild(toast);
+          }
+        }, 4000);
+      }
+    } catch (error) {
+      console.warn(`Auto-save error for ${doc.title}:`, error);
+    } finally {
+      // Remove from saving state
+      setSavingDocuments(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(doc.id);
+        return newSet;
+      });
+    }
+  };
+
+  // Save selected documents to database
+  const saveSelectedDocuments = async () => {
+    if (selectedDocuments.size === 0) {
+      alert('Please select at least one document to save.');
+      return;
+    }
+
+    // For now, we'll need case ID and user ID - these would come from props or context
+    const defaultCaseId = 'demo-case-id'; // Replace with actual case ID
+    const defaultUserId = 'demo-user-id'; // Replace with actual user ID from auth
+
+    setIsSavingDocuments(true);
+
+    try {
+      const docsToSave = searchResults?.documents.filter(doc => selectedDocuments.has(doc.id)) || [];
+      const savedDocuments = [];
+      let totalCitations = 0;
+
+      for (const doc of docsToSave) {
+        console.log(`Saving document: ${doc.title}`);
+
+        // First, get the full text content if available
+        let fullText = '';
+        if (doc.hasPlainText) {
+          try {
+            const contentResponse = await fetch('/api/legal/get-document-content', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ documentId: doc.id })
+            });
+
+            if (contentResponse.ok) {
+              const contentData = await contentResponse.json();
+              fullText = contentData.fullText || '';
+            }
+          } catch (error) {
+            console.warn(`Failed to get full text for ${doc.id}:`, error);
+          }
+        }
+
+        // Save the document
+        const saveResponse = await fetch('/api/legal/save-document', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            document: doc,
+            caseId: defaultCaseId,
+            userId: defaultUserId,
+            fullText: fullText
+          })
+        });
+
+        if (saveResponse.ok) {
+          const saveData = await saveResponse.json();
+          savedDocuments.push(saveData.document);
+          totalCitations += saveData.citationsFound || 0;
+          console.log(`✅ Saved: ${doc.title} (${saveData.citationsFound || 0} citations)`);
+        } else {
+          const errorData = await saveResponse.json();
+          console.error(`❌ Failed to save ${doc.title}:`, errorData.error);
+          throw new Error(`Failed to save ${doc.title}: ${errorData.error}`);
+        }
+      }
+
+      // Success message
+      alert(`Successfully saved ${savedDocuments.length} documents with ${totalCitations} total citations extracted!`);
+      
+      // Clear selections after successful save
+      setSelectedDocuments(new Set());
+
+    } catch (error) {
+      console.error('Document save error:', error);
+      alert(`Error saving documents: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsSavingDocuments(false);
+    }
+  };
 
   // Enhanced AI summary generation
   const generateDocumentSummary = async (doc: CaseDocument): Promise<DocumentSummary> => {
@@ -134,35 +339,28 @@ export default function CitationResearch({ onDocumentsSelected, onSummariesGener
     };
   };
 
-  // Load full document text for preview
+  // Load full document text for preview using cached content
   const loadDocumentPreview = async (doc: CaseDocument) => {
     setIsLoadingPreview(true);
     setPreviewDocument(doc);
     
     try {
-      // Get real document content from CourtListener API
-      const response = await fetch('/api/legal/get-document-content', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ documentId: doc.id }),
-      });
+      // Use cached content function
+      const cachedContent = await getCachedDocumentContent(doc);
       
-      if (response.ok) {
-        const data = await response.json();
-        const docWithContent = { 
-          ...doc, 
-          fullText: data.fullText || 'Document content not available'
-        };
-        const updatedDoc = { 
-          ...docWithContent,
-          summary: data.summary || await generateDocumentSummary(docWithContent)
-        };
-        setPreviewDocument(updatedDoc);
-      } else {
-        // Fallback to mock data if API fails
-        const mockFullText = `
+      const docWithContent = { 
+        ...doc, 
+        fullText: cachedContent.fullText || 'Document content not available'
+      };
+      const updatedDoc = { 
+        ...docWithContent,
+        summary: await generateDocumentSummary(docWithContent)
+      };
+      setPreviewDocument(updatedDoc);
+    } catch (error) {
+      console.error('Error loading document preview:', error);
+      // Fallback to mock data if caching fails
+      const mockFullText = `
 UNITED STATES COURT OF APPEALS FOR THE ${doc.court.toUpperCase()}
 
 ${doc.title}
@@ -200,19 +398,10 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
         const updatedDoc = { 
           ...doc, 
           fullText: mockFullText,
-          summary: await generateDocumentSummary(doc)
+          summary: generateMockSummary(doc)
         };
         
         setPreviewDocument(updatedDoc);
-      }
-    } catch (error) {
-      console.error('Error loading document preview:', error);
-      // Use fallback content
-      setPreviewDocument({
-        ...doc,
-        fullText: 'Unable to load document content. Please try again.',
-        summary: await generateDocumentSummary(doc)
-      });
     } finally {
       setIsLoadingPreview(false);
     }
@@ -250,6 +439,14 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
 
   const performSearch = async () => {
     if (!searchQuery.trim()) return;
+
+    // Throttle API calls to prevent overwhelming the server
+    const now = Date.now();
+    if (now - lastSearchTime < 1000) { // Wait at least 1 second between API calls
+      console.log('🚫 Throttling search request - too frequent');
+      return;
+    }
+    setLastSearchTime(now);
 
     const queryText = searchQuery.trim();
     
@@ -331,13 +528,25 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
     performSearch();
   };
 
-  const toggleDocumentSelection = (documentId: string) => {
+  const toggleDocumentSelection = async (documentId: string) => {
     const newSelected = new Set(selectedDocuments);
-    if (newSelected.has(documentId)) {
+    const wasSelected = newSelected.has(documentId);
+    
+    if (wasSelected) {
       newSelected.delete(documentId);
     } else {
       newSelected.add(documentId);
+      
+      // Auto-save when document is selected
+      if (autoSaveEnabled && searchResults) {
+        const doc = searchResults.documents.find(d => d.id === documentId);
+        if (doc) {
+          // Don't await to keep UI responsive
+          autoSaveDocument(doc);
+        }
+      }
     }
+    
     setSelectedDocuments(newSelected);
     
     // Call callback with selected documents
@@ -546,17 +755,32 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
 
             {/* Compact Options Row */}
             <div className="flex items-center justify-between mt-3 text-sm">
-              <label className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  checked={isRealTimeSearch}
-                  onChange={(e) => setIsRealTimeSearch(e.target.checked)}
-                  className="text-blue-600"
-                />
-                <span className="text-gray-600">⚡ Real-time search</span>
-              </label>
+              <div className="flex items-center space-x-4">
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={isRealTimeSearch}
+                    onChange={(e) => setIsRealTimeSearch(e.target.checked)}
+                    className="text-blue-600"
+                  />
+                  <span className="text-gray-600">⚡ Real-time search</span>
+                </label>
+                
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={autoSaveEnabled}
+                    onChange={(e) => setAutoSaveEnabled(e.target.checked)}
+                    className="text-green-600"
+                  />
+                  <span className="text-gray-600">💾 Auto-save on select</span>
+                </label>
+              </div>
               
-              <div className="text-gray-500">
+              <div className="flex items-center space-x-2 text-gray-500">
+                {documentCache.size > 0 && (
+                  <span className="text-blue-600">📱 {documentCache.size} cached</span>
+                )}
                 {searchQuery.length >= 3 ? (
                   <span className="text-green-600">✓ Ready to search</span>
                 ) : (
@@ -693,41 +917,77 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
                 <div className="flex items-center space-x-4">
                   <p className="text-sm text-gray-600">
                     Found {searchResults.summary.totalFound} total results, showing {searchResults.summary.documentsReturned} documents
+                    {searchResults.documents.filter(doc => doc.hasPlainText).length > 0 && (
+                      <span className="ml-2 text-green-600 font-medium">
+                        ({searchResults.documents.filter(doc => doc.hasPlainText).length} with full text)
+                      </span>
+                    )}
                   </p>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={selectAllDocuments}
-                      className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-                    >
-                      Select All
-                    </button>
-                    <span className="text-gray-400">|</span>
-                    <button
-                      onClick={selectNoneDocuments}
-                      className="text-sm text-gray-600 hover:text-gray-800 font-medium"
-                    >
-                      Select None
-                    </button>
+                  <div className="flex items-center space-x-4">
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={selectAllDocuments}
+                        className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        Select All
+                      </button>
+                      <span className="text-gray-400">|</span>
+                      <button
+                        onClick={selectNoneDocuments}
+                        className="text-sm text-gray-600 hover:text-gray-800 font-medium"
+                      >
+                        Select None
+                      </button>
+                    </div>
+                    
+                    <label className="flex items-center space-x-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={showOnlyWithContent}
+                        onChange={(e) => setShowOnlyWithContent(e.target.checked)}
+                        className="text-green-600"
+                      />
+                      <span className="text-gray-600">📄 Only show documents with full text</span>
+                    </label>
                   </div>
                 </div>
                 {selectedDocuments.size > 0 && (
-                  <button
-                    onClick={generateSummaries}
-                    disabled={isGeneratingSummaries}
-                    className="px-3 py-1 bg-green-600 text-white rounded text-sm flex items-center space-x-1"
-                  >
-                    {isGeneratingSummaries ? (
-                      <>
-                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
-                        <span>Generating...</span>
-                      </>
-                    ) : (
-                      <>
-                        <FileText className="w-3 h-3" />
-                        <span>AI Summary ({selectedDocuments.size})</span>
-                      </>
-                    )}
-                  </button>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={generateSummaries}
+                      disabled={isGeneratingSummaries}
+                      className="px-3 py-1 bg-green-600 text-white rounded text-sm flex items-center space-x-1"
+                    >
+                      {isGeneratingSummaries ? (
+                        <>
+                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                          <span>Generating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="w-3 h-3" />
+                          <span>AI Summary ({selectedDocuments.size})</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={saveSelectedDocuments}
+                      disabled={isSavingDocuments}
+                      className="px-3 py-1 bg-blue-600 text-white rounded text-sm flex items-center space-x-1"
+                    >
+                      {isSavingDocuments ? (
+                        <>
+                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                          <span>Saving...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-3 h-3" />
+                          <span>Save to Database ({selectedDocuments.size})</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -736,7 +996,9 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
           {/* Document List - Simple & Immediate */}
           {searchResults.documents.length > 0 && (
             <div className="divide-y divide-gray-100">
-              {searchResults.documents.map((doc) => (
+              {searchResults.documents
+                .filter(doc => showOnlyWithContent ? doc.hasPlainText : true)
+                .map((doc) => (
                 <div
                   key={doc.id}
                   className="flex items-center space-x-3 p-3 hover:bg-gray-50"
@@ -745,7 +1007,9 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
                     onClick={() => toggleDocumentSelection(doc.id)}
                     className="flex-shrink-0"
                   >
-                    {selectedDocuments.has(doc.id) ? (
+                    {savingDocuments.has(doc.id) ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
+                    ) : selectedDocuments.has(doc.id) ? (
                       <CheckSquare className="w-4 h-4 text-blue-600" />
                     ) : (
                       <Square className="w-4 h-4 text-gray-400" />
@@ -754,7 +1018,24 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
                   
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <h4 className="font-medium text-gray-900 truncate">{doc.title}</h4>
+                      <div className="flex items-center space-x-2 min-w-0">
+                        <button
+                          onClick={() => loadDocumentPreview(doc)}
+                          className="font-medium text-gray-900 hover:text-blue-600 truncate text-left transition-colors"
+                          title="Click to preview document"
+                        >
+                          {doc.title}
+                        </button>
+                        {doc.hasPlainText ? (
+                          <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded flex-shrink-0">
+                            ✅ Full Text
+                          </span>
+                        ) : (
+                          <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded flex-shrink-0">
+                            📋 Metadata Only
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center space-x-2 ml-2">
                         <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">
                           {doc.source}
@@ -797,6 +1078,25 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* No Results After Filter Message */}
+          {searchResults.documents.length > 0 && 
+           searchResults.documents.filter(doc => showOnlyWithContent ? doc.hasPlainText : true).length === 0 && (
+            <div className="text-center py-8 text-gray-500">
+              <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+              <p className="font-medium">No documents with full text found</p>
+              <p className="text-sm mt-2">
+                Try unchecking "Only show documents with full text" to see all {searchResults.documents.length} results,
+                or search for different terms that might have more content available.
+              </p>
+              <button
+                onClick={() => setShowOnlyWithContent(false)}
+                className="mt-3 text-blue-600 hover:text-blue-800 text-sm font-medium"
+              >
+                Show all {searchResults.documents.length} documents
+              </button>
             </div>
           )}
 

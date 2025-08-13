@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import FileUpload from '@/app/components/FileUpload';
 import CitationResearch from '@/app/components/CitationResearch';
+import SavedDocuments from '@/app/components/SavedDocuments';
 import DebugLogPanel, { debugLog } from '@/app/components/DebugLogPanel';
 import CaseInformationInput from '@/app/components/CaseInformationInput';
 import WorkflowStep1 from '@/app/components/WorkflowStep1';
@@ -345,6 +346,7 @@ export default function WorkflowPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [forceRender, setForceRender] = useState(0);
   const [caseInformation, setCaseInformation] = useState<any>(null);
+  const [savedDocumentsRefresh, setSavedDocumentsRefresh] = useState(0);
 
   // Always load case information from database when caseId is available
   useEffect(() => {
@@ -1712,6 +1714,21 @@ export default function WorkflowPage() {
                                     <CitationResearch
                                       onDocumentsSelected={setSelectedDocuments}
                                       onSummariesGenerated={setDocumentSummaries}
+                                      onDocumentSaved={(doc) => {
+                                        console.log('📄 Document saved, refreshing SavedDocuments...', doc.title);
+                                        setSavedDocumentsRefresh(prev => prev + 1);
+                                      }}
+                                    />
+                                  </div>
+                                  
+                                  {/* Saved Documents Section */}
+                                  <div className="border-t border-gray-200 pt-6 mt-6">
+                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">📂 Saved Research Documents</h3>
+                                    <SavedDocuments 
+                                      caseId={currentCaseId || '0ff75224-0d61-497d-ac1b-ffefdb63dba1'}
+                                      userId={'a2871219-533b-485e-9ac6-effcda36a88d'}
+                                      key={currentCaseId} // Force re-render when case ID changes
+                                      refreshTrigger={savedDocumentsRefresh} // Trigger refresh on document save
                                     />
                                   </div>
 

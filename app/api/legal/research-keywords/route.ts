@@ -103,17 +103,30 @@ export async function POST(request: NextRequest) {
 
         const data = await response.json();
         
-        // Filter and prioritize results that have snippets (indicating content availability)
-        const resultsWithContent = data.results.filter((result: any) => 
-          result.snippet && result.snippet.length > 100
-        );
+        // Check for content availability indicators
+        const resultsWithContent = [];
+        const resultsWithoutContent = [];
         
-        console.log(`Found ${resultsWithContent.length}/${data.results.length} results with substantial content`);
+        for (const result of data.results) {
+          // Check multiple indicators of content availability
+          const hasSnippet = result.snippet && result.snippet.length > 50;
+          const hasOpinions = result.opinions && result.opinions.length > 0;
+          const hasDownloadUrl = result.opinions && result.opinions.some((op: any) => op.download_url);
+          
+          // Consider it as having content if it has opinions that might contain text
+          if (hasSnippet || hasOpinions || hasDownloadUrl) {
+            resultsWithContent.push(result);
+          } else {
+            resultsWithoutContent.push(result);
+          }
+        }
+        
+        console.log(`Found ${resultsWithContent.length}/${data.results.length} results with potential content (${data.results.filter((r: any) => r.snippet).length} with snippets, ${data.results.filter((r: any) => r.opinions?.length > 0).length} with opinions)`);
         
         if (data.results && data.results.length > 0) {
           // Prioritize results with actual content - use all results but mark content availability
           const resultsToUse = resultsWithContent.length > 0 ? 
-            [...resultsWithContent, ...data.results.filter((result: any) => !result.snippet || result.snippet.length <= 100)] :
+            [...resultsWithContent, ...resultsWithoutContent] :
             data.results;
           
           if (resultsToUse && resultsToUse.length > 0) {
@@ -131,7 +144,11 @@ export async function POST(request: NextRequest) {
               plainText: result.snippet || '',
               authors: result.judge ? [result.judge] : [],
               isSelected: false,
-              hasPlainText: !!(result.snippet && result.snippet.length > 100)
+              hasPlainText: !!(
+                (result.snippet && result.snippet.length > 50) ||
+                (result.opinions && result.opinions.length > 0) ||
+                (result.opinions && result.opinions.some((op: any) => op.download_url))
+              )
             }));
 
             allResults.push({

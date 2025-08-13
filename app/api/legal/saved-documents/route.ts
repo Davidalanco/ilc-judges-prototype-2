@@ -98,10 +98,10 @@ export async function GET(request: NextRequest) {
       dateRange: {
         earliest: documentsWithDetails
           .filter(doc => doc.decision_date)
-          .sort((a, b) => new Date(a.decision_date) - new Date(b.decision_date))[0]?.decision_date,
+          .sort((a, b) => new Date(a.decision_date).getTime() - new Date(b.decision_date).getTime())[0]?.decision_date,
         latest: documentsWithDetails
           .filter(doc => doc.decision_date)
-          .sort((a, b) => new Date(b.decision_date) - new Date(a.decision_date))[0]?.decision_date
+          .sort((a, b) => new Date(b.decision_date).getTime() - new Date(a.decision_date).getTime())[0]?.decision_date
       }
     };
 

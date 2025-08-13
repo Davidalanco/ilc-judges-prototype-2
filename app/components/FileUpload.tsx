@@ -193,8 +193,7 @@ export default function FileUpload({
           speakers: transcriptionData.speakers || [],
           speakerCount: transcriptionData.speakerCount || 0,
           s3Key: transcriptionData.s3Key,
-          conversationId: transcriptionData.conversationId,
-          caseId: transcriptionData.caseId, // Include caseId from backend response
+          conversationId: transcriptionData.conversationId
         });
       }
 

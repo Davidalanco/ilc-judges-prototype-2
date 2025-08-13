@@ -95,14 +95,14 @@ export async function POST(request: NextRequest) {
           
           // Complete API responses - EVERYTHING from CourtListener
           search_result: completeApiData.searchResult || document,
-          cluster_data: completeApiData.clusterData,
-          opinion_data: completeApiData.opinionData,
-          docket_data: completeApiData.docketData,
+          cluster_data: (completeApiData as any).clusterData || null,
+          opinion_data: (completeApiData as any).opinionData || null,
+          docket_data: (completeApiData as any).docketData || null,
           
           // Content in multiple formats
-          html_content: completeApiData.opinionData?.html,
-          html_with_citations: completeApiData.opinionData?.html_with_citations,
-          xml_content: completeApiData.opinionData?.xml_harvard,
+          html_content: (completeApiData as any).opinionData?.html,
+          html_with_citations: (completeApiData as any).opinionData?.html_with_citations,
+          xml_content: (completeApiData as any).opinionData?.xml_harvard,
           
           // Metadata
           stored_at: new Date().toISOString(),
@@ -110,8 +110,8 @@ export async function POST(request: NextRequest) {
           complete_cache: true, // Flag indicating we have ALL data
           
           // Citation analysis
-          cited_cases: completeApiData.opinionData?.opinions_cited || [],
-          citation_count: completeApiData.clusterData?.citation_count || 0,
+          cited_cases: (completeApiData as any).opinionData?.opinions_cited || [],
+          citation_count: (completeApiData as any).clusterData?.citation_count || 0,
           
           // Court and case details
           court_info: {
@@ -122,18 +122,18 @@ export async function POST(request: NextRequest) {
           
           // Judges and authorship
           judges_info: {
-            panel_judges: completeApiData.clusterData?.panel || [],
-            author: completeApiData.opinionData?.author_str,
-            author_id: completeApiData.opinionData?.author_id,
-            joined_by: completeApiData.opinionData?.joined_by_str
+            panel_judges: (completeApiData as any).clusterData?.panel || [],
+            author: (completeApiData as any).opinionData?.author_str,
+            author_id: (completeApiData as any).opinionData?.author_id,
+            joined_by: (completeApiData as any).opinionData?.joined_by_str
           },
           
           // Additional metadata
-          precedential_status: completeApiData.clusterData?.precedential_status,
-          source: completeApiData.clusterData?.source,
-          sha1: completeApiData.opinionData?.sha1,
-          page_count: completeApiData.opinionData?.page_count,
-          extracted_by_ocr: completeApiData.opinionData?.extracted_by_ocr
+          precedential_status: (completeApiData as any).clusterData?.precedential_status,
+          source: (completeApiData as any).clusterData?.source,
+          sha1: (completeApiData as any).opinionData?.sha1,
+          page_count: (completeApiData as any).opinionData?.page_count,
+          extracted_by_ocr: (completeApiData as any).opinionData?.extracted_by_ocr
         };
 
         await supabase
@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
           document_id: legalDocument.id,
           summary_type: 'detailed',
           ai_model: 'gpt-4',
-          cited_cases: citedCases,
+          cited_cases: citedCases.map(c => c.citation),
           ai_summary: summary.aiAnalysis,
           key_points: summary.keyPoints || [],
           legal_standard: summary.legalStandard,
@@ -356,7 +356,7 @@ async function generateDocumentSummary(documentId: string, document: any, fullTe
 
 // Helper functions to parse AI analysis
 function extractKeyPoints(analysis: string): string[] {
-  const match = analysis.match(/(?:Key|Main)\s+(?:Points|Holdings)[:\s]*(.*?)(?:\n\n|\d\.)/s);
+  const match = analysis.match(/(?:Key|Main)\s+(?:Points|Holdings)[:\s]*(.*?)(?:\n\n|\d\.)/);
   if (match) {
     return match[1].split(/[•\-\*]\s*/).filter(point => point.trim().length > 10).slice(0, 5);
   }
@@ -364,12 +364,12 @@ function extractKeyPoints(analysis: string): string[] {
 }
 
 function extractLegalStandard(analysis: string): string {
-  const match = analysis.match(/(?:Legal\s+Standard|Standard\s+Applied)[:\s]*(.*?)(?:\n\n|\d\.)/s);
+  const match = analysis.match(/(?:Legal\s+Standard|Standard\s+Applied)[:\s]*(.*?)(?:\n\n|\d\.)/);
   return match ? match[1].trim().substring(0, 200) : '';
 }
 
 function extractDisposition(analysis: string): string {
-  const match = analysis.match(/(?:Disposition|Case\s+Disposition|Outcome)[:\s]*(.*?)(?:\n\n|\d\.)/s);
+  const match = analysis.match(/(?:Disposition|Case\s+Disposition|Outcome)[:\s]*(.*?)(?:\n\n|\d\.)/);
   return match ? match[1].trim().substring(0, 100) : '';
 }
 
@@ -379,17 +379,17 @@ function extractNotableQuotes(analysis: string): string[] {
 }
 
 function extractHolding(analysis: string): string {
-  const match = analysis.match(/(?:Holding|Court\s+Held)[:\s]*(.*?)(?:\n\n|\d\.)/s);
+  const match = analysis.match(/(?:Holding|Court\s+Held)[:\s]*(.*?)(?:\n\n|\d\.)/);
   return match ? match[1].trim().substring(0, 300) : '';
 }
 
 function extractReasoning(analysis: string): string {
-  const match = analysis.match(/(?:Reasoning|Rationale)[:\s]*(.*?)(?:\n\n|\d\.)/s);
+  const match = analysis.match(/(?:Reasoning|Rationale)[:\s]*(.*?)(?:\n\n|\d\.)/);
   return match ? match[1].trim().substring(0, 500) : '';
 }
 
 function extractPrecedentValue(analysis: string): string {
-  const match = analysis.match(/(?:Precedent|Significance)[:\s]*(.*?)(?:\n\n|\d\.)/s);
+  const match = analysis.match(/(?:Precedent|Significance)[:\s]*(.*?)(?:\n\n|\d\.)/);
   return match ? match[1].trim().substring(0, 200) : '';
 }
 
@@ -433,8 +433,8 @@ async function fetchCompleteCourtListenerData(documentId: string, document: any)
           console.log('✅ Cluster data retrieved');
           
           // 2. Get opinion details if available
-          if (result.clusterData.sub_opinions && result.clusterData.sub_opinions.length > 0) {
-            const opinionUrl = result.clusterData.sub_opinions[0];
+          if (result.clusterData && (result.clusterData as any).sub_opinions && (result.clusterData as any).sub_opinions.length > 0) {
+            const opinionUrl = (result.clusterData as any).sub_opinions[0];
             const opinionId = opinionUrl.split('/').slice(-2)[0]; // Extract ID from URL
             
             console.log(`📄 Fetching opinion data for ID: ${opinionId}`);
@@ -446,7 +446,7 @@ async function fetchCompleteCourtListenerData(documentId: string, document: any)
               
               if (opinionResponse.ok) {
                 result.opinionData = await opinionResponse.json();
-                console.log(`✅ Opinion data retrieved (${result.opinionData.plain_text?.length || 0} chars plain text)`);
+                console.log(`✅ Opinion data retrieved (${(result.opinionData as any)?.plain_text?.length || 0} chars plain text)`);
               }
             } catch (opinionError) {
               console.warn('Failed to fetch opinion data:', opinionError);
@@ -454,8 +454,8 @@ async function fetchCompleteCourtListenerData(documentId: string, document: any)
           }
           
           // 3. Get docket details if available
-          if (result.clusterData.docket) {
-            const docketId = result.clusterData.docket.split('/').slice(-2)[0]; // Extract ID from URL
+          if (result.clusterData && (result.clusterData as any).docket) {
+            const docketId = (result.clusterData as any).docket.split('/').slice(-2)[0]; // Extract ID from URL
             
             console.log(`⚖️ Fetching docket data for ID: ${docketId}`);
             

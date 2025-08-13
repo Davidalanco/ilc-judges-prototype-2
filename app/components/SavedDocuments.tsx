@@ -199,7 +199,7 @@ export default function SavedDocuments({ caseId, userId, refreshTrigger }: Saved
       'brief_respondent': 'Respondent Briefs',
       'brief_amicus': 'Amicus Briefs'
     };
-    return labels[type] || 'Other Documents';
+    return (labels as any)[type] || 'Other Documents';
   };
 
   const DocumentCard = ({ doc }: { doc: SavedDocument }) => (
@@ -361,8 +361,9 @@ export default function SavedDocuments({ caseId, userId, refreshTrigger }: Saved
           <p className="text-gray-600">Use the legal research tool to find and save documents for this case.</p>
         </div>
       ) : (
-        Object.entries(groupedDocuments).map(([type, docs]: [string, SavedDocument[]]) => {
-          if (!docs || docs.length === 0) return null;
+        Object.entries(groupedDocuments).map(([type, docs]) => {
+          const typedDocs = docs as SavedDocument[];
+          if (!typedDocs || typedDocs.length === 0) return null;
           
           const isExpanded = expandedSections.has(type);
           
@@ -376,14 +377,14 @@ export default function SavedDocuments({ caseId, userId, refreshTrigger }: Saved
                   {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                   <h3 className="font-semibold text-gray-900">{getDocumentTypeLabel(type)}</h3>
                   <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
-                    {docs.length}
+                    {typedDocs.length}
                   </span>
                 </div>
               </button>
               
               {isExpanded && (
                 <div className="p-4 space-y-4">
-                  {docs.map((doc) => (
+                  {typedDocs.map((doc) => (
                     <DocumentCard key={doc.id} doc={doc} />
                   ))}
                 </div>

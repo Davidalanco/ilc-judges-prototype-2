@@ -398,7 +398,7 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
         const updatedDoc = { 
           ...doc, 
           fullText: mockFullText,
-          summary: generateMockSummary(doc)
+          summary: undefined
         };
         
         setPreviewDocument(updatedDoc);

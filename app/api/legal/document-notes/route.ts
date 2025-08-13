@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
       notes = allNotes.filter(note => note.document_id === documentId);
     } else {
       // Get all notes for case
-      notes = await db.getResearchNotesByCase(caseId);
+      notes = await db.getResearchNotesByCase(caseId || 'dummy');
     }
 
     return NextResponse.json({
@@ -104,7 +104,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const updates = {};
+    const updates: any = {};
     if (title !== undefined) updates.title = title;
     if (content !== undefined) updates.content = content;
     if (tags !== undefined) updates.tags = tags;

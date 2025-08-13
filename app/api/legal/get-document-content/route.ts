@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       // V3 format - fetch specific opinion
       try {
         const response = await fetch(
-          `https://www.courtlistener.com/api/rest/v3/opinions/${opinionId}/?format=json`,
+          `https://www.courtlistener.com/api/rest/v4/opinions/${opinionId}/?format=json`,
           { headers }
         );
 
@@ -79,13 +79,18 @@ export async function POST(request: NextRequest) {
     if (!fullText) {
       try {
         const clusterResponse = await fetch(
-          `https://www.courtlistener.com/api/rest/v3/clusters/${clusterId}/?format=json`,
+          `https://www.courtlistener.com/api/rest/v4/clusters/${clusterId}/?format=json`,
           { headers }
         );
 
+        console.log(`🌐 Cluster API response status: ${clusterResponse.status}`);
         if (clusterResponse.ok) {
           const cluster = await clusterResponse.json();
-          console.log(`Cluster sub_opinions:`, cluster.sub_opinions);
+          console.log(`📋 Cluster data:`, {
+            case_name: cluster.case_name,
+            sub_opinions_count: cluster.sub_opinions?.length || 0,
+            sub_opinions: cluster.sub_opinions
+          });
           
           // Get the first sub-opinion for text content
           if (cluster.sub_opinions && cluster.sub_opinions.length > 0) {
@@ -96,16 +101,25 @@ export async function POST(request: NextRequest) {
             if (typeof firstOpinionUrl === 'string' && firstOpinionUrl.startsWith('https://')) {
               opinionUrl = firstOpinionUrl;
             } else {
-              opinionUrl = `https://www.courtlistener.com/api/rest/v3/opinions/${firstOpinionUrl.id}/?format=json`;
+              opinionUrl = `https://www.courtlistener.com/api/rest/v4/opinions/${firstOpinionUrl.id}/?format=json`;
             }
             
-            console.log(`Fetching opinion from: ${opinionUrl}`);
+            console.log(`📄 Fetching opinion from: ${opinionUrl}`);
             const opinionResponse = await fetch(opinionUrl, { headers });
-
+            
+            console.log(`🌐 Opinion API response status: ${opinionResponse.status}`);
             if (opinionResponse.ok) {
               const opinion = await opinionResponse.json();
+              console.log(`📄 Opinion data:`, {
+                type: opinion.type,
+                has_plain_text: !!opinion.plain_text,
+                has_html: !!opinion.html,
+                plain_text_length: opinion.plain_text?.length || 0,
+                html_length: opinion.html?.length || 0,
+                download_url: opinion.download_url
+              });
               fullText = opinion.plain_text || opinion.html || '';
-              console.log(`Opinion content length: ${fullText.length} characters`);
+              console.log(`✅ Final content length: ${fullText.length} characters`);
               metadata = {
                 title: `${cluster.case_name} - ${opinion.type}`,
                 author: opinion.author?.name_full || 'Unknown',
@@ -114,8 +128,14 @@ export async function POST(request: NextRequest) {
                 hasPlainText: !!opinion.plain_text,
                 clusterId: clusterId
               };
+            } else {
+              const errorText = await opinionResponse.text();
+              console.log(`❌ Opinion API error: ${opinionResponse.status} - ${errorText}`);
             }
           }
+        } else {
+          const errorText = await clusterResponse.text();
+          console.log(`❌ Cluster API error: ${clusterResponse.status} - ${errorText}`);
         }
       } catch (error) {
         console.error('Cluster fetch error:', error);

@@ -1,6 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { openai } from '@/lib/ai/openai';
+import { analyzeJusticesWithClaude } from '@/lib/ai/claude';
 import { db } from '@/lib/db';
+
+// GET /api/ai/analyze-justices - Retrieve existing justice analysis
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const caseId = searchParams.get('caseId');
+
+    if (!caseId) {
+      return NextResponse.json({ 
+        error: 'Missing required parameter: caseId' 
+      }, { status: 400 });
+    }
+
+    console.log('📋 Retrieving existing justice analysis for case:', caseId);
+
+    const existingAnalysis = await db.getClaudeJusticeAnalysis(caseId);
+    
+    if (existingAnalysis) {
+      console.log('✅ Found existing justice analysis');
+      return NextResponse.json({
+        success: true,
+        justiceAnalysis: existingAnalysis,
+        caseId,
+        fromDatabase: true
+      });
+    } else {
+      console.log('ℹ️ No existing justice analysis found');
+      return NextResponse.json({
+        success: false,
+        message: 'No existing analysis found',
+        caseId
+      }, { status: 404 });
+    }
+
+  } catch (error) {
+    console.error('❌ Error retrieving justice analysis:', error);
+    return NextResponse.json(
+      { error: 'Failed to retrieve justice analysis', details: error instanceof Error ? error.message : String(error) },
+      { status: 500 }
+    );
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -47,134 +89,20 @@ export async function POST(request: NextRequest) {
       documentContext = docs.join('\n\n');
     }
 
-    // Create comprehensive prompt for AI justice analysis
-    const analysisPrompt = `You are a Supreme Court expert analyzing how each of the 9 current justices would likely vote on this specific case. 
+    console.log('🧠 Sending justice analysis to Claude...');
 
-CASE CONTEXT:
-- Case Name: ${caseData.case_name || 'Unknown'}
-- Court Level: ${caseData.court_level || 'Unknown'}
-- Constitutional Question: ${caseData.constitutional_question || 'Unknown'}
-- Case Type: ${caseData.case_type || 'Unknown'}
-- Client Type: ${caseData.client_type || 'Unknown'}
-- Jurisdiction: ${caseData.jurisdiction || 'Unknown'}
-- Penalties: ${caseData.penalties || 'Unknown'}
-- Precedent Target: ${caseData.precedent_target || 'Unknown'}
+    // Use Claude for justice analysis
+    const justiceAnalysis = await analyzeJusticesWithClaude(caseData, transcription, documentContext);
 
-ATTORNEY STRATEGY DISCUSSION:
-${transcription}
-
-SUPPORTING DOCUMENTS:
-${documentContext}
-
-For each justice, analyze their likely position based on:
-1. Their judicial philosophy and past voting patterns
-2. How they've ruled on similar constitutional issues
-3. Their specific statements/opinions on related matters
-4. How the specific facts of THIS case align with their known concerns
-
-Provide analysis in this exact JSON format:
-{
-  "conservativeJustices": [
-    {
-      "name": "Justice Samuel A. Alito Jr.",
-      "alignment": [0-100 number],
-      "keyFactors": ["factor1", "factor2", "factor3"],
-      "strategy": "specific strategy for this case",
-      "confidence": "realistic assessment",
-      "riskLevel": "minimal|low|medium|high",
-      "caseSpecificAnalysis": "how this specific case facts/issues align with this justice's known positions",
-      "historicalVotes": ["relevant case name where they voted similarly"]
-    }
-  ],
-  "swingVotes": [
-    {
-      "name": "Chief Justice John G. Roberts Jr.",
-      "alignment": [0-100 number],
-      "keyFactors": ["factor1", "factor2", "factor3"],
-      "strategy": "specific strategy for this case",
-      "confidence": "realistic assessment",
-      "riskLevel": "minimal|low|medium|high",
-      "caseSpecificAnalysis": "detailed analysis for swing vote",
-      "institutionalConcerns": "specific concerns about this case",
-      "historicalVotes": ["relevant cases"]
-    }
-  ],
-  "liberalJustices": [
-    {
-      "name": "Justice Elena Kagan",
-      "alignment": [0-100 number],
-      "keyFactors": ["factor1", "factor2", "factor3"],
-      "strategy": "specific strategy for this case", 
-      "confidence": "realistic assessment",
-      "riskLevel": "minimal|low|medium|high",
-      "caseSpecificAnalysis": "how this case aligns with liberal judicial philosophy",
-      "historicalVotes": ["relevant cases"]
-    }
-  ],
-  "overallStrategy": {
-    "primaryApproach": "main strategic recommendation",
-    "keySwingVote": "who is most important to persuade",
-    "strongestArguments": ["arg1", "arg2", "arg3"],
-    "risksToAvoid": ["risk1", "risk2"],
-    "confidenceLevel": "overall confidence in victory",
-    "recommendedFraming": "how to frame the case for maximum appeal"
-  }
-}
-
-Be realistic about alignment scores - not every conservative justice will be 90%+ aligned. Consider the specific constitutional issues and how each justice has actually voted on similar cases. Factor in the specific facts of this case, not just general judicial philosophy.`;
-
-    console.log('🤖 Sending justice analysis to OpenAI...');
-
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a Supreme Court legal expert with deep knowledge of each justice\'s voting patterns, judicial philosophy, and decision-making process. Provide realistic, case-specific analysis based on actual judicial behavior and constitutional law precedents.'
-        },
-        {
-          role: 'user',
-          content: analysisPrompt
-        }
-      ],
-      temperature: 0.3, // Lower temperature for more consistent legal analysis
-      max_tokens: 4000
-    });
-
-    const analysisContent = response.choices[0]?.message?.content;
-    
-    if (!analysisContent) {
-      throw new Error('No analysis content received from OpenAI');
-    }
-
-    console.log('📊 Raw AI response:', analysisContent.substring(0, 500) + '...');
-
-    // Parse the JSON response
-    let justiceAnalysis;
+    console.log('💾 Saving justice analysis to database...');
     try {
-      // Clean the response to extract JSON
-      const jsonMatch = analysisContent.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('No JSON found in response');
-      }
-      
-      justiceAnalysis = JSON.parse(jsonMatch[0]);
-    } catch (parseError) {
-      console.error('❌ Error parsing AI response:', parseError);
-      console.error('Raw response:', analysisContent);
-      
-      // Fallback: try to extract key information even if JSON parsing fails
-      return NextResponse.json({
-        error: 'Failed to parse AI analysis',
-        rawResponse: analysisContent,
-        caseId
-      }, { status: 500 });
+      await db.saveClaudeJusticeAnalysis(caseId, justiceAnalysis);
+      console.log('✅ Justice analysis saved to database successfully');
+    } catch (dbError) {
+      console.error('⚠️ Failed to save to database, but analysis completed:', dbError);
+      // Continue anyway - we still return the analysis
     }
-
-    // Store the analysis in memory for now (we'll add database storage later)
-    // TODO: Add justice analysis storage to database schema
-    console.log('💾 Justice analysis completed (storing in database to be implemented)');
-
+    
     console.log('✅ Justice analysis completed successfully');
 
     return NextResponse.json({

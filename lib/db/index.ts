@@ -318,6 +318,107 @@ export const db = {
     return data;
   },
 
+  // Save complete Claude justice analysis
+  async saveClaudeJusticeAnalysis(caseId: string, analysisData: any) {
+    try {
+      console.log(`💾 Saving Claude justice analysis for case: ${caseId}`);
+      
+      // First, delete any existing analysis for this case
+      await supabase
+        .from('justice_case_analysis')
+        .delete()
+        .eq('case_id', caseId);
+
+      // Process each justice and save individually
+      const justiceRecords = [];
+      
+      // Handle both conservative and liberal justices arrays
+      const allJustices = [
+        ...(analysisData.conservativeJustices || []),
+        ...(analysisData.liberalJustices || []),
+        ...(analysisData.swingJustices || []),
+        ...(analysisData.justices || []) // fallback for different structure
+      ];
+
+      for (const justice of allJustices) {
+        const record = {
+          case_id: caseId,
+          justice_name: justice.name,
+          alignment_score: justice.alignment / 100, // Convert to decimal
+          key_factors: justice.keyFactors || [],
+          strategy: justice.strategy || '',
+          confidence_level: justice.confidence || '',
+          risk_level: justice.riskLevel || '',
+          case_specific_analysis: justice.caseSpecificAnalysis || '',
+          historical_votes: justice.historicalVotes || [],
+          analysis_data: justice // Store complete object as JSONB
+        };
+        justiceRecords.push(record);
+      }
+
+      // Insert all justice records
+      const { data, error } = await supabase
+        .from('justice_case_analysis')
+        .insert(justiceRecords)
+        .select();
+
+      if (error) throw error;
+
+      // Also save the overall strategy if provided
+      if (analysisData.overallStrategy) {
+        await supabase
+          .from('cases')
+          .update({
+            overall_strategy: analysisData.overallStrategy,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', caseId);
+      }
+
+      console.log(`✅ Saved ${justiceRecords.length} justice analyses for case ${caseId}`);
+      return data;
+    } catch (error) {
+      console.error('❌ Error saving Claude justice analysis:', error);
+      throw error;
+    }
+  },
+
+  async getClaudeJusticeAnalysis(caseId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('justice_case_analysis')
+        .select('*')
+        .eq('case_id', caseId)
+        .order('alignment_score', { ascending: false });
+      
+      if (error) throw error;
+      
+      if (!data || data.length === 0) {
+        return null;
+      }
+
+      // Reconstruct the analysis format
+      const justices = data.map(record => ({
+        name: record.justice_name,
+        alignment: record.alignment_score * 100, // Convert back to percentage
+        keyFactors: record.key_factors,
+        strategy: record.strategy,
+        confidence: record.confidence_level,
+        riskLevel: record.risk_level,
+        caseSpecificAnalysis: record.case_specific_analysis,
+        historicalVotes: record.historical_votes
+      }));
+
+      return {
+        justices,
+        analysisDate: data[0].created_at
+      };
+    } catch (error) {
+      console.error('❌ Error retrieving Claude justice analysis:', error);
+      throw error;
+    }
+  },
+
   // Brief Section Chats
   async addBriefSectionChat(chatData: {
     brief_id: string;

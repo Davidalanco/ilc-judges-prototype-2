@@ -6,6 +6,9 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || 'dummy-key-for-build',
 });
 
+// Export the OpenAI client for use in other modules
+export { openai };
+
 // Transcribe audio file using ElevenLabs (with speaker identification)
 export async function transcribeAudio(audioBuffer: Buffer, fileName: string) {
   try {

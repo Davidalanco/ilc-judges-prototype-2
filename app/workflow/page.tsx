@@ -31,7 +31,8 @@ import {
   AlertTriangle,
   Database,
   ChevronUp,
-  Clock
+  Clock,
+  Trash2
 } from 'lucide-react';
 import FileUpload from '@/app/components/FileUpload';
 import CitationResearch from '@/app/components/CitationResearch';
@@ -51,6 +52,8 @@ function OpenCasesManager({ currentCaseId, onCaseSelect }: OpenCasesManagerProps
   const [cases, setCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedCases, setSelectedCases] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Load cases on component mount
   useEffect(() => {
@@ -150,6 +153,140 @@ function OpenCasesManager({ currentCaseId, onCaseSelect }: OpenCasesManagerProps
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (selectedCases.size === 0) {
+      alert('Please select at least one case to delete.');
+      return;
+    }
+
+    const caseNames = Array.from(selectedCases).map(caseId => {
+      const case_ = cases.find(c => c.id === caseId);
+      return case_?.case_name || 'Untitled Case';
+    });
+
+    // Enhanced confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${selectedCases.size} case(s)?\n\nCases to delete:\n${caseNames.map(name => `• ${name}`).join('\n')}\n\nThis action cannot be undone and will permanently remove all selected cases and their associated data.`
+    );
+    
+    if (!confirmed) {
+      debugLog.info('Case Management', 'Bulk deletion cancelled by user');
+      return;
+    }
+
+    setIsDeleting(true);
+    debugLog.info('Case Management', `Starting bulk deletion of ${selectedCases.size} cases`);
+
+    try {
+      const deletionResults = [];
+      let successCount = 0;
+      let failureCount = 0;
+
+      // Delete cases one by one to handle individual failures
+      for (const caseId of selectedCases) {
+        const case_ = cases.find(c => c.id === caseId);
+        const caseName = case_?.case_name || 'Untitled Case';
+        
+        try {
+          debugLog.api('API Call', 'DELETE /api/cases', { caseId, caseName });
+          
+          const response = await fetch(`/api/cases?id=${caseId}`, {
+            method: 'DELETE'
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            debugLog.success('Case Management', `Case "${caseName}" deleted successfully`, result);
+            deletionResults.push({ caseId, caseName, success: true });
+            successCount++;
+          } else {
+            const errorData = await response.json();
+            debugLog.error('Case Management', `Failed to delete case "${caseName}": ${errorData.error || 'Unknown error'}`, errorData);
+            deletionResults.push({ caseId, caseName, success: false, error: errorData.error });
+            failureCount++;
+          }
+        } catch (error) {
+          debugLog.error('Case Management', `Error deleting case "${caseName}"`, error);
+          deletionResults.push({ caseId, caseName, success: false, error: 'Network error' });
+          failureCount++;
+        }
+      }
+
+      // Update local state - remove successfully deleted cases
+      const successfullyDeletedIds = deletionResults
+        .filter(result => result.success)
+        .map(result => result.caseId);
+      
+      setCases(prev => prev.filter(c => !successfullyDeletedIds.includes(c.id)));
+      
+      // Clear selection
+      setSelectedCases(new Set());
+      
+      // If current case was deleted, clear it
+      if (currentCaseId && successfullyDeletedIds.includes(currentCaseId)) {
+        onCaseSelect('');
+        localStorage.removeItem('workflow_case_id');
+      }
+
+      // Show results
+      if (successCount > 0) {
+        const toast = document.createElement('div');
+        toast.textContent = `✅ Successfully deleted ${successCount} case(s)`;
+        toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50';
+        document.body.appendChild(toast);
+        setTimeout(() => {
+          if (document.body.contains(toast)) {
+            document.body.removeChild(toast);
+          }
+        }, 3000);
+      }
+
+      if (failureCount > 0) {
+        const failedCases = deletionResults
+          .filter(result => !result.success)
+          .map(result => result.caseName)
+          .join(', ');
+        
+        const errorToast = document.createElement('div');
+        errorToast.textContent = `❌ Failed to delete ${failureCount} case(s): ${failedCases}`;
+        errorToast.className = 'fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded shadow-lg z-50';
+        document.body.appendChild(errorToast);
+        setTimeout(() => {
+          if (document.body.contains(errorToast)) {
+            document.body.removeChild(errorToast);
+          }
+        }, 5000);
+      }
+
+      debugLog.success('Case Management', `Bulk deletion completed: ${successCount} successful, ${failureCount} failed`);
+
+    } catch (error) {
+      debugLog.error('Case Management', 'Bulk deletion error', error);
+      console.error('Bulk deletion error:', error);
+      setError('Error during bulk deletion');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const toggleCaseSelection = (caseId: string) => {
+    const newSelected = new Set(selectedCases);
+    if (newSelected.has(caseId)) {
+      newSelected.delete(caseId);
+    } else {
+      newSelected.add(caseId);
+    }
+    setSelectedCases(newSelected);
+  };
+
+  const selectAllCases = () => {
+    setSelectedCases(new Set(cases.map(c => c.id)));
+  };
+
+  const clearSelection = () => {
+    setSelectedCases(new Set());
+  };
+
   const startNewWorkflow = () => {
     debugLog.info('Workflow', 'Starting new workflow - case will be created on first file upload');
     
@@ -229,6 +366,70 @@ function OpenCasesManager({ currentCaseId, onCaseSelect }: OpenCasesManagerProps
         </button>
       </div>
 
+      {/* Bulk Actions Bar */}
+      {cases.length > 0 && (
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={selectedCases.size === cases.length && cases.length > 0}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      selectAllCases();
+                    } else {
+                      clearSelection();
+                    }
+                  }}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  {selectedCases.size === 0 
+                    ? 'Select All' 
+                    : selectedCases.size === cases.length 
+                    ? 'All Selected' 
+                    : `${selectedCases.size} Selected`}
+                </span>
+              </div>
+              
+              {selectedCases.size > 0 && (
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={clearSelection}
+                    className="text-sm text-gray-600 hover:text-gray-800 underline"
+                  >
+                    Clear Selection
+                  </button>
+                  <span className="text-gray-300">|</span>
+                  <button
+                    onClick={handleBulkDelete}
+                    disabled={isDeleting}
+                    className="flex items-center space-x-1 px-3 py-1 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 disabled:bg-red-400 transition-colors"
+                  >
+                    {isDeleting ? (
+                      <>
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                        <span>Deleting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3 h-3" />
+                        <span>Delete Selected ({selectedCases.size})</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            <div className="text-sm text-gray-500">
+              {cases.length} case{cases.length !== 1 ? 's' : ''} total
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Cases List */}
       {cases.length === 0 ? (
         <div className="text-center py-12 bg-gray-50 rounded-lg">
@@ -248,13 +449,26 @@ function OpenCasesManager({ currentCaseId, onCaseSelect }: OpenCasesManagerProps
           {cases.map((caseItem) => (
             <div
               key={caseItem.id}
-              className={`bg-white rounded-lg border p-6 hover:shadow-md transition-shadow cursor-pointer ${
-                currentCaseId === caseItem.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+              className={`bg-white rounded-lg border p-6 hover:shadow-md transition-shadow ${
+                currentCaseId === caseItem.id ? 'border-blue-500 bg-blue-50' : 
+                selectedCases.has(caseItem.id) ? 'border-red-300 bg-red-50' : 'border-gray-200'
               }`}
-              onClick={() => handleCaseSelect(caseItem.id)}
             >
               <div className="flex items-start justify-between">
-                <div className="flex-1">
+                <div className="flex items-start space-x-3 flex-1">
+                  <input
+                    type="checkbox"
+                    checked={selectedCases.has(caseItem.id)}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      toggleCaseSelection(caseItem.id);
+                    }}
+                    className="mt-1 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                  />
+                  <div 
+                    className="flex-1 cursor-pointer" 
+                    onClick={() => handleCaseSelect(caseItem.id)}
+                  >
                   <div className="flex items-center space-x-3 mb-2">
                     <h3 className="text-lg font-semibold text-gray-900">
                       {caseItem.case_name || 'Untitled Case'}
@@ -316,6 +530,7 @@ function OpenCasesManager({ currentCaseId, onCaseSelect }: OpenCasesManagerProps
                         {currentCaseId === caseItem.id ? 'Continue Working →' : 'Open Case →'}
                       </button>
                     </div>
+                  </div>
                   </div>
                 </div>
               </div>
@@ -955,6 +1170,23 @@ export default function WorkflowPage() {
     },
     {
       id: 3,
+      title: "Citation and Legal Research",
+      icon: Search,
+      color: "bg-indigo-500",
+      description: "Conduct comprehensive legal research using AI-powered citation analysis and case law discovery.",
+      details: "The AI searches legal databases for relevant precedents, citations, and supporting case law. Users can search by keywords, citations, or legal concepts to build a comprehensive foundation of supporting documents and precedents for their brief.",
+      mockData: {
+        searchesPerformed: 12,
+        documentsFound: 247,
+        relevantCases: 89,
+        citationsExtracted: 156,
+        keyPrecedents: ["Employment Division v. Smith (1990)", "Wisconsin v. Yoder (1972)", "Sherbert v. Verner (1963)"],
+        supportingCases: ["Church of Lukumi Babalu Aye v. Hialeah", "Hosanna-Tabor v. EEOC", "Trinity Lutheran v. Comer"],
+        researchQuality: 94
+      }
+    },
+    {
+      id: 4,
       title: "Judge Profile Analysis",
       icon: Users,
       color: "bg-purple-500",
@@ -1028,7 +1260,7 @@ export default function WorkflowPage() {
       }
     },
     {
-      id: 4,
+      id: 5,
       title: "Vehicle Assessment",
       icon: Gavel,
       color: "bg-yellow-500",
@@ -1054,7 +1286,7 @@ export default function WorkflowPage() {
       }
     },
     {
-      id: 5,
+      id: 6,
       title: "Historical Context Research",
       icon: History,
       color: "bg-indigo-500",
@@ -1082,7 +1314,7 @@ export default function WorkflowPage() {
       }
     },
     {
-      id: 6,
+      id: 7,
       title: "Storytelling Integration",
       icon: Heart,
       color: "bg-pink-500",
@@ -1106,7 +1338,7 @@ export default function WorkflowPage() {
       }
     },
     {
-      id: 7,
+      id: 8,
       title: "Multi-Perspective Argument Crafting",
       icon: Target,
       color: "bg-red-500",
@@ -1134,7 +1366,7 @@ export default function WorkflowPage() {
       }
     },
     {
-      id: 8,
+      id: 9,
       title: "Counter-Argument Analysis & Response Strategy",
       icon: AlertTriangle,
       color: "bg-orange-500",
@@ -1154,7 +1386,7 @@ export default function WorkflowPage() {
       }
     },
     {
-      id: 9,
+      id: 10,
       title: "Citation and Precedent Verification",
       icon: Shield,
       color: "bg-teal-500",
@@ -1168,7 +1400,7 @@ export default function WorkflowPage() {
       }
     },
     {
-      id: 10,
+      id: 11,
       title: "Brief Structure and Drafting",
       icon: PenTool,
       color: "bg-indigo-500",
@@ -1201,7 +1433,7 @@ export default function WorkflowPage() {
       }
     },
     {
-      id: 11,
+      id: 12,
       title: "Final Review and Optimization",
       icon: Eye,
       color: "bg-gray-500",
@@ -1700,64 +1932,94 @@ export default function WorkflowPage() {
                                       onClick={() => handleStepComplete(2)}
                                       className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center"
                                     >
-                                      Continue to Legal Research <ChevronRight className="w-4 h-4 ml-1" />
+                                      Continue to Citation Research <ChevronRight className="w-4 h-4 ml-1" />
                                     </button>
                                   </div>
-                                </div>
-                              )}
-
-                              {/* Citation Research Component - Show after case info is complete */}
-                              {caseInformation && (
-                                <div className="space-y-4">
-                                  <div className="border-t border-gray-200 pt-6">
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Legal Research & Citations</h3>
-                                    <CitationResearch
-                                      onDocumentsSelected={setSelectedDocuments}
-                                      onSummariesGenerated={setDocumentSummaries}
-                                      onDocumentSaved={(doc) => {
-                                        console.log('📄 Document saved, refreshing SavedDocuments...', doc.title);
-                                        setSavedDocumentsRefresh(prev => prev + 1);
-                                      }}
-                                    />
-                                  </div>
-                                  
-                                  {/* Saved Documents Section */}
-                                  <div className="border-t border-gray-200 pt-6 mt-6">
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">📂 Saved Research Documents</h3>
-                                    <SavedDocuments 
-                                      caseId={currentCaseId || '0ff75224-0d61-497d-ac1b-ffefdb63dba1'}
-                                      userId={'a2871219-533b-485e-9ac6-effcda36a88d'}
-                                      key={currentCaseId} // Force re-render when case ID changes
-                                      refreshTrigger={savedDocumentsRefresh} // Trigger refresh on document save
-                                    />
-                                  </div>
-
-                                  {/* Document Summaries Display */}
-                                  {documentSummaries.length > 0 && (
-                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                      <h4 className="font-semibold text-blue-900 mb-2">✓ Document Analysis Complete</h4>
-                                      <p className="text-sm text-blue-700">
-                                        {documentSummaries.length} documents analyzed and summarized for case context.
-                                      </p>
-                                    </div>
-                                  )}
-
-                                  {/* Selected Documents Count */}
-                                  {selectedDocuments.length > 0 && (
-                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                      <h4 className="font-semibold text-blue-900 mb-2">Selected Documents</h4>
-                                      <p className="text-sm text-blue-700">
-                                        {selectedDocuments.length} documents selected for brief generation.
-                                      </p>
-                                    </div>
-                                  )}
                                 </div>
                               )}
                             </div>
                           )}
 
+                          {step.id === 3 && (
+                            <div className="space-y-6">
+                              {/* Citation and Legal Research Step */}
+                              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                                <h3 className="text-lg font-semibold text-indigo-900 mb-2">📚 Legal Research & Citation Analysis</h3>
+                                <p className="text-indigo-700 text-sm">
+                                  Conduct comprehensive legal research using AI-powered citation analysis and case law discovery.
+                                  Search legal databases for relevant precedents, citations, and supporting case law.
+                                </p>
+                              </div>
+
+                              {/* Citation Research Component */}
+                              <div className="space-y-4">
+                                <CitationResearch
+                                  onDocumentsSelected={setSelectedDocuments}
+                                  onSummariesGenerated={setDocumentSummaries}
+                                  onDocumentSaved={(doc) => {
+                                    console.log('📄 Document saved, refreshing SavedDocuments...', doc.title);
+                                    setSavedDocumentsRefresh(prev => prev + 1);
+                                  }}
+                                />
+                                
+                                {/* Saved Documents Section */}
+                                <div className="border-t border-gray-200 pt-6 mt-6">
+                                  <h3 className="text-lg font-semibold text-gray-900 mb-4">📂 Saved Research Documents</h3>
+                                  <SavedDocuments 
+                                    caseId={currentCaseId || '0ff75224-0d61-497d-ac1b-ffefdb63dba1'}
+                                    userId={'a2871219-533b-485e-9ac6-effcda36a88d'}
+                                    key={currentCaseId} // Force re-render when case ID changes
+                                    refreshTrigger={savedDocumentsRefresh} // Trigger refresh on document save
+                                  />
+                                </div>
+
+                                {/* Document Summaries Display */}
+                                {documentSummaries.length > 0 && (
+                                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                    <h4 className="font-semibold text-blue-900 mb-2">✓ Document Analysis Complete</h4>
+                                    <p className="text-sm text-blue-700">
+                                      {documentSummaries.length} documents analyzed and summarized for case context.
+                                    </p>
+                                  </div>
+                                )}
+
+                                {/* Selected Documents Count */}
+                                {selectedDocuments.length > 0 && (
+                                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                    <h4 className="font-semibold text-blue-900 mb-2">Selected Documents</h4>
+                                    <p className="text-sm text-blue-700">
+                                      {selectedDocuments.length} documents selected for brief generation.
+                                    </p>
+                                    <div className="mt-4">
+                                      <button
+                                        onClick={() => handleStepComplete(3)}
+                                        className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center"
+                                      >
+                                        Continue to Judge Analysis <ChevronRight className="w-4 h-4 ml-1" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Research Progress Display */}
+                                {completedSteps.includes(3) && (
+                                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                                    <h4 className="font-semibold text-green-900 mb-2 flex items-center">
+                                      <CheckCircle className="w-5 h-5 mr-2" />
+                                      Legal Research Complete
+                                    </h4>
+                                    <div className="text-sm text-green-700 space-y-1">
+                                      <p><strong>Documents Analyzed:</strong> {selectedDocuments.length}</p>
+                                      <p><strong>Research Quality:</strong> Comprehensive case law foundation established</p>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
                           {/* Placeholder for remaining steps */}
-                          {step.id > 2 && (
+                          {step.id > 3 && (
                             <div className="text-center py-8">
                               <Clock className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                               <h3 className="text-lg font-semibold text-gray-700 mb-2">Coming Soon</h3>

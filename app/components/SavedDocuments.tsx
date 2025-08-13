@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { FileText, MessageSquare, Plus, Edit3, Calendar, Scale, BookOpen, Download, Eye, ChevronDown, ChevronRight, AlertCircle, CheckCircle, Database, Copy, Code, Search, RefreshCw } from 'lucide-react';
+import { FileText, MessageSquare, Plus, Edit3, Calendar, Scale, BookOpen, Download, Eye, ChevronDown, ChevronRight, AlertCircle, CheckCircle, Database, Copy, Code, Search, RefreshCw, Trash2 } from 'lucide-react';
 
 interface SavedDocument {
   id: string;
@@ -145,6 +145,102 @@ export default function SavedDocuments({ caseId, userId, refreshTrigger }: Saved
     }
   };
 
+  const deleteDocument = async (document: SavedDocument) => {
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${document.case_title}"?\n\nThis action cannot be undone and will permanently remove the document and all associated notes and analysis.`
+    );
+    
+    if (!confirmed) {
+      console.log('Document deletion cancelled by user');
+      return;
+    }
+
+    try {
+      console.log(`🗑️ Deleting document: ${document.case_title} (${document.id})`);
+      
+      const response = await fetch(`/api/legal/saved-documents/${document.id}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log(`✅ Document "${document.case_title}" deleted successfully`, result);
+        
+        // Remove document from local state
+        setDocuments(prev => prev.filter(doc => doc.id !== document.id));
+        
+        // Update grouped documents
+        const updatedGrouped = { ...groupedDocuments };
+        if (updatedGrouped[document.document_type]) {
+          updatedGrouped[document.document_type] = updatedGrouped[document.document_type].filter(
+            (doc: SavedDocument) => doc.id !== document.id
+          );
+          
+          // Remove empty groups
+          if (updatedGrouped[document.document_type].length === 0) {
+            delete updatedGrouped[document.document_type];
+          }
+        }
+        setGroupedDocuments(updatedGrouped);
+        
+        // Update insights
+        if (insights) {
+          setInsights({
+            ...insights,
+            totalDocuments: insights.totalDocuments - 1,
+            documentsWithAI: insights.documentsWithAI - (document.hasAiAnalysis ? 1 : 0),
+            documentsWithNotes: insights.documentsWithNotes - (document.noteCount > 0 ? 1 : 0)
+          });
+        }
+        
+        // Close preview if this document was selected
+        if (selectedDocument?.id === document.id) {
+          setSelectedDocument(null);
+        }
+        
+        // Show success message
+        const toast = document.createElement('div');
+        toast.textContent = `✅ "${document.case_title}" deleted successfully`;
+        toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50';
+        document.body.appendChild(toast);
+        setTimeout(() => {
+          if (document.body.contains(toast)) {
+            document.body.removeChild(toast);
+          }
+        }, 3000);
+        
+      } else {
+        const errorData = await response.json();
+        console.error(`❌ Failed to delete document: ${errorData.error || 'Unknown error'}`, errorData);
+        
+        // Show error message
+        const toast = document.createElement('div');
+        toast.textContent = `❌ Failed to delete "${document.case_title}": ${errorData.error || 'Unknown error'}`;
+        toast.className = 'fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded shadow-lg z-50';
+        document.body.appendChild(toast);
+        setTimeout(() => {
+          if (document.body.contains(toast)) {
+            document.body.removeChild(toast);
+          }
+        }, 5000);
+      }
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      
+      // Show error message
+      const toast = document.createElement('div');
+      toast.textContent = `❌ Error deleting "${document.case_title}": ${error instanceof Error ? error.message : 'Unknown error'}`;
+      toast.className = 'fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded shadow-lg z-50';
+      document.body.appendChild(toast);
+      setTimeout(() => {
+        if (document.body.contains(toast)) {
+          document.body.removeChild(toast);
+        }
+      }, 5000);
+    }
+  };
+
   const addNoteToDocument = async (documentId: string) => {
     if (!newNote.content.trim()) {
       alert('Please enter note content');
@@ -269,6 +365,17 @@ export default function SavedDocuments({ caseId, userId, refreshTrigger }: Saved
           >
             <Plus className="w-3 h-3" />
             <span>Add Note</span>
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              deleteDocument(doc);
+            }}
+            className="px-3 py-1 bg-red-600 text-white rounded text-sm flex items-center space-x-1 hover:bg-red-700 transition-colors"
+            title="Delete this document permanently"
+          >
+            <Trash2 className="w-3 h-3" />
+            <span>Delete</span>
           </button>
         </div>
         {doc.has_plain_text && (

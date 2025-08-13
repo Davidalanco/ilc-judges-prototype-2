@@ -490,6 +490,17 @@ export const db = {
     return data;
   },
 
+  async getLegalDocumentById(documentId: string) {
+    const { data, error } = await supabase
+      .from('legal_documents')
+      .select('*')
+      .eq('id', documentId)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
   async getLegalDocumentsByCase(caseId: string) {
     const { data, error } = await supabase
       .from('legal_documents')

@@ -1515,6 +1515,11 @@ export default function WorkflowPage() {
         // Step 3 is complete if we have selected documents or saved research
         return !!(selectedDocuments && selectedDocuments.length > 0);
       
+      case 4:
+        // Step 4 is complete if we have case information and citation research 
+        // (judge analysis is auto-generated based on case type)
+        return !!(caseInformation && selectedDocuments && selectedDocuments.length > 0);
+      
       default:
         return false;
     }
@@ -2065,8 +2070,276 @@ export default function WorkflowPage() {
                             </div>
                           )}
 
+                          {step.id === 4 && (
+                            <div className="space-y-6">
+                              {/* Judge Profile Analysis Step */}
+                              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                                <h3 className="text-lg font-semibold text-purple-900 mb-2">⚖️ Supreme Court Justice Analysis</h3>
+                                <p className="text-purple-700 text-sm">
+                                  AI automatically analyzes psychological profiles and judicial philosophies of all nine justices.
+                                  This includes detailed analysis of previous opinions, speeches, and decision patterns to identify 
+                                  their values, preferred legal frameworks, and potential pressure points for persuasion.
+                                </p>
+                              </div>
+
+                              {/* Justice Analysis Cards */}
+                              <div className="space-y-4">
+                                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                                  <h4 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
+                                    <Users className="w-6 h-6 text-purple-600 mr-2" />
+                                    Conservative-Leaning Justices
+                                  </h4>
+                                  
+                                  {/* Conservative Justices */}
+                                  <div className="grid gap-4 mb-6">
+                                    {[
+                                      {
+                                        name: "Justice Samuel A. Alito Jr.",
+                                        alignment: 95,
+                                        keyFactors: ["Religious liberty champion", "Anti-Smith sentiment", "Traditional values"],
+                                        strategy: "Emphasize historical religious persecution and constitutional text",
+                                        confidence: "Natural ally - minimal persuasion needed",
+                                        riskLevel: "minimal"
+                                      },
+                                      {
+                                        name: "Justice Neil M. Gorsuch", 
+                                        alignment: 93,
+                                        keyFactors: ["Explicit Smith critic", "Textualist approach", "Individual liberty"],
+                                        strategy: "Focus on textual meaning of Free Exercise Clause",
+                                        confidence: "Strong ally - has criticized Smith in opinions",
+                                        riskLevel: "minimal"
+                                      },
+                                      {
+                                        name: "Justice Clarence Thomas",
+                                        alignment: 90,
+                                        keyFactors: ["Originalism", "Religious liberty", "Anti-Smith inclination"],
+                                        strategy: "Historical analysis of Founding Era protections",
+                                        confidence: "Reliable vote - originalist approach favors religious liberty",
+                                        riskLevel: "low"
+                                      },
+                                      {
+                                        name: "Justice Amy Coney Barrett",
+                                        alignment: 75,
+                                        keyFactors: ["Religious liberty background", "Judicial minimalism", "Institutional concerns"],
+                                        strategy: "Emphasize narrow application to insular communities",
+                                        confidence: "Likely ally but may prefer incremental approach",
+                                        riskLevel: "medium"
+                                      },
+                                      {
+                                        name: "Justice Brett M. Kavanaugh",
+                                        alignment: 70,
+                                        keyFactors: ["Moderate conservatism", "Institutional stability", "Precedent respect"],
+                                        strategy: "Focus on limited impact to Amish communities",
+                                        confidence: "Persuadable - concerned about broader implications",
+                                        riskLevel: "medium"
+                                      }
+                                    ].map((justice, idx) => (
+                                      <div key={idx} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                                        <div className="flex items-start justify-between mb-3">
+                                          <div className="flex-1">
+                                            <div className="flex items-center mb-2">
+                                              <span className="font-semibold text-lg text-gray-900">{justice.name}</span>
+                                              <span className={`ml-3 px-2 py-1 rounded-full text-xs font-medium ${
+                                                justice.riskLevel === 'minimal' ? 'bg-green-100 text-green-800' :
+                                                justice.riskLevel === 'low' ? 'bg-green-100 text-green-700' :
+                                                'bg-yellow-100 text-yellow-800'
+                                              }`}>
+                                                {justice.riskLevel} risk
+                                              </span>
+                                            </div>
+                                            <div className="text-sm text-gray-600 mb-2">
+                                              {justice.keyFactors.join(" • ")}
+                                            </div>
+                                          </div>
+                                          <div className="text-right ml-4">
+                                            <div className={`text-2xl font-bold ${
+                                              justice.alignment >= 90 ? 'text-green-600' :
+                                              justice.alignment >= 70 ? 'text-yellow-600' :
+                                              'text-red-600'
+                                            }`}>{justice.alignment}%</div>
+                                            <div className="text-xs text-gray-500">Alignment</div>
+                                          </div>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                          <div>
+                                            <h6 className="text-sm font-medium text-gray-700 mb-1">Strategy</h6>
+                                            <p className="text-sm text-gray-600">{justice.strategy}</p>
+                                          </div>
+                                          <div>
+                                            <h6 className="text-sm font-medium text-gray-700 mb-1">Assessment</h6>
+                                            <p className="text-sm text-gray-600">{justice.confidence}</p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  <h5 className="text-lg font-bold text-gray-900 mb-3 flex items-center">
+                                    <Scale className="w-5 h-5 text-gray-600 mr-2" />
+                                    Swing Vote
+                                  </h5>
+                                  
+                                  {/* Chief Justice Roberts */}
+                                  <div className="border border-gray-200 rounded-lg p-4 bg-yellow-50 mb-6">
+                                    <div className="flex items-start justify-between mb-3">
+                                      <div className="flex-1">
+                                        <div className="flex items-center mb-2">
+                                          <span className="font-semibold text-lg text-gray-900">Chief Justice John G. Roberts Jr.</span>
+                                          <span className="ml-3 px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                            KEY SWING VOTE
+                                          </span>
+                                        </div>
+                                        <div className="text-sm text-gray-600 mb-2">
+                                          Institutional concerns • Judicial minimalism • Narrow rulings
+                                        </div>
+                                      </div>
+                                      <div className="text-right ml-4">
+                                        <div className="text-2xl font-bold text-yellow-600">65%</div>
+                                        <div className="text-xs text-gray-500">Alignment</div>
+                                      </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      <div>
+                                        <h6 className="text-sm font-medium text-gray-700 mb-1">Strategy</h6>
+                                        <p className="text-sm text-gray-600">Provide pathway for narrow ruling without Smith reversal</p>
+                                      </div>
+                                      <div>
+                                        <h6 className="text-sm font-medium text-gray-700 mb-1">Assessment</h6>
+                                        <p className="text-sm text-gray-600">Swing vote - institutional concerns may outweigh religious liberty</p>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <h5 className="text-lg font-bold text-gray-900 mb-3 flex items-center">
+                                    <AlertTriangle className="w-5 h-5 text-blue-600 mr-2" />
+                                    Liberal-Leaning Justices
+                                  </h5>
+                                  
+                                  {/* Liberal Justices */}
+                                  <div className="grid gap-4">
+                                    {[
+                                      {
+                                        name: "Justice Elena Kagan",
+                                        alignment: 45,
+                                        strategy: "Frame as minority rights and bodily autonomy issue",
+                                        keyFactors: ["Minority rights", "Bodily autonomy arguments", "Government authority"],
+                                        confidence: "Potential ally through minority rights framing"
+                                      },
+                                      {
+                                        name: "Justice Sonia Sotomayor", 
+                                        alignment: 40,
+                                        strategy: "Emphasize protection of vulnerable minority communities",
+                                        keyFactors: ["Public health focus", "Minority protection", "Government authority"],
+                                        confidence: "Difficult persuasion - strong government authority advocate"
+                                      },
+                                      {
+                                        name: "Justice Ketanji Brown Jackson",
+                                        alignment: 35,
+                                        strategy: "Focus on historical persecution of religious minorities",
+                                        keyFactors: ["Public health priority", "Civil rights focus", "Government skepticism"],
+                                        confidence: "Unlikely ally - strong public health priority"
+                                      }
+                                    ].map((justice, idx) => (
+                                      <div key={idx} className="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                                        <div className="flex items-start justify-between mb-3">
+                                          <div className="flex-1">
+                                            <div className="flex items-center mb-2">
+                                              <span className="font-semibold text-lg text-gray-900">{justice.name}</span>
+                                              <span className="ml-3 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                high risk
+                                              </span>
+                                            </div>
+                                            <div className="text-sm text-blue-700 mb-2">
+                                              {justice.keyFactors.join(" • ")}
+                                            </div>
+                                          </div>
+                                          <div className="text-right ml-4">
+                                            <div className="text-2xl font-bold text-blue-600">{justice.alignment}%</div>
+                                            <div className="text-xs text-gray-500">Alignment</div>
+                                          </div>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                          <div>
+                                            <h6 className="text-sm font-medium text-gray-700 mb-1">Strategy</h6>
+                                            <p className="text-sm text-gray-600">{justice.strategy}</p>
+                                          </div>
+                                          <div>
+                                            <h6 className="text-sm font-medium text-gray-700 mb-1">Assessment</h6>
+                                            <p className="text-sm text-gray-600">{justice.confidence}</p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Strategic Summary */}
+                                <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-6">
+                                  <h4 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                                    <Brain className="w-6 h-6 text-purple-600 mr-2" />
+                                    Strategic Analysis Summary
+                                  </h4>
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="bg-white rounded-lg p-4">
+                                      <h5 className="font-semibold text-green-800 mb-2">Likely Supporters (5)</h5>
+                                      <p className="text-sm text-gray-600">
+                                        Strong conservative bloc with proven religious liberty records. 
+                                        Alito, Gorsuch, and Thomas are nearly certain votes.
+                                      </p>
+                                      <div className="mt-2 text-sm font-medium text-green-700">
+                                        Confidence: 85-95%
+                                      </div>
+                                    </div>
+                                    <div className="bg-white rounded-lg p-4">
+                                      <h5 className="font-semibold text-yellow-800 mb-2">Swing Vote (1)</h5>
+                                      <p className="text-sm text-gray-600">
+                                        Chief Justice Roberts is the key vote. Focus on institutional 
+                                        legitimacy and narrow judicial approach.
+                                      </p>
+                                      <div className="mt-2 text-sm font-medium text-yellow-700">
+                                        Confidence: 65%
+                                      </div>
+                                    </div>
+                                    <div className="bg-white rounded-lg p-4">
+                                      <h5 className="font-semibold text-red-800 mb-2">Likely Opposition (3)</h5>
+                                      <p className="text-sm text-gray-600">
+                                        Liberal justices prioritize government authority and public health. 
+                                        Frame arguments around minority protection.
+                                      </p>
+                                      <div className="mt-2 text-sm font-medium text-red-700">
+                                        Confidence: 35-45%
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="mt-4 pt-4 border-t border-gray-200">
+                                    <h5 className="font-semibold text-gray-900 mb-2">Recommended Approach</h5>
+                                    <p className="text-sm text-gray-700">
+                                      <strong>Primary Strategy:</strong> Frame as narrow religious liberty protection for insular communities 
+                                      without broad Smith reversal. Emphasize historical persecution angle with originalist foundations.
+                                    </p>
+                                    <p className="text-sm text-gray-700 mt-2">
+                                      <strong>For Roberts:</strong> Provide clear limiting principles and institutional legitimacy concerns. 
+                                      Show how ruling maintains court's credibility while protecting religious minorities.
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {/* Continue Button */}
+                                <div className="text-center pt-4">
+                                  <button
+                                    onClick={() => handleStepComplete(4)}
+                                    className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors flex items-center mx-auto"
+                                  >
+                                    Continue to Vehicle Assessment <ChevronRight className="w-4 h-4 ml-2" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
                           {/* Placeholder for remaining steps */}
-                          {step.id > 3 && (
+                          {step.id > 4 && (
                             <div className="text-center py-8">
                               <Clock className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                               <h3 className="text-lg font-semibold text-gray-700 mb-2">Coming Soon</h3>

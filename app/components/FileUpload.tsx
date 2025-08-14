@@ -185,7 +185,7 @@ export default function FileUpload({
       if (onUploadComplete) {
         onUploadComplete({
           fileName: transcriptionData.fileName,
-          fileUrl: '', // No file storage needed
+          fileUrl: transcriptionData.fileUrl, // Use actual S3 URL for audio playback
           fileSize: transcriptionData.fileSize,
           duration: `${transcriptionData.duration}s`,
           transcription: transcriptionData.transcription,
@@ -193,7 +193,8 @@ export default function FileUpload({
           speakers: transcriptionData.speakers || [],
           speakerCount: transcriptionData.speakerCount || 0,
           s3Key: transcriptionData.s3Key,
-          conversationId: transcriptionData.conversationId
+          conversationId: transcriptionData.conversationId,
+          caseId: transcriptionData.caseId // Pass the caseId for workflow persistence
         });
       }
 

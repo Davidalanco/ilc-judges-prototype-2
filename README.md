@@ -58,9 +58,47 @@ open http://localhost:3000
 ## 🛠️ Tech Stack
 
 - **Frontend**: Next.js 14, React, TypeScript
+- **Database**: Supabase (PostgreSQL + Auth + Storage)
 - **Styling**: Tailwind CSS
 - **Icons**: Lucide React
 - **Deployment**: Ready for Vercel
+
+## 🗄️ Database Management
+
+This project uses **Supabase** as the backend database and authentication system. For AI assistants working on this project:
+
+### Supabase CLI Workflow
+- **Live Database Updates**: We work directly with the live Supabase database
+- **No Docker Required**: Local development uses remote database connections
+- **Migration Management**: Use Supabase CLI for schema changes
+
+### Key Commands for AI Assistance
+```bash
+# Check authentication status
+supabase projects list
+
+# Generate TypeScript types from live database
+supabase gen types typescript --project-id tisesclnhbhwqmvacskn
+
+# View migration status
+supabase migration list
+
+# Pull current schema from live database
+supabase db pull --schema public
+```
+
+### Database Philosophy
+- **Direct Live Updates**: Schema changes are applied directly to production
+- **Type Safety**: Auto-generate TypeScript types from live schema
+- **Simplified Workflow**: No local Docker containers or shadow databases needed
+- **Real-time Development**: Changes reflect immediately across all environments
+
+### For AI Assistants
+When making database-related changes:
+1. Use the live Supabase database (connection details in `.env.local`)
+2. Generate fresh TypeScript types after schema changes
+3. Test directly against the live database
+4. No need to start local Supabase instances or Docker containers
 
 ## 📁 Project Structure
 

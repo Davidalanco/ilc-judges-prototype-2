@@ -12,6 +12,10 @@ interface TranscriptionData {
   transcript: string;
   speakers?: Array<{id: string; name: string}>;
   createdAt: string;
+  // Additional fields for fresh uploads to enable audio playback
+  s3Url?: string;
+  conversationId?: string | null;
+  caseId?: string | null;
 }
 
 interface WorkflowStep1Props {
@@ -39,14 +43,19 @@ export default function WorkflowStep1({ caseId, onTranscriptionComplete, isCompl
         duration: uploadedFileData.duration || '0:00',
         transcript: uploadedFileData.transcription || 'No transcript available',
         speakers: uploadedFileData.speakers || [],
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        // Add additional data for fresh uploads to enable audio playback
+        s3Url: uploadedFileData.fileUrl, // Direct S3 URL for fresh uploads
+        conversationId: uploadedFileData.conversationId,
+        caseId: uploadedFileData.caseId
       };
       
       console.log('📄 Fresh transcription data:', {
         conversationId: uploadedFileData.conversationId,
         caseId: uploadedFileData.caseId,
         fileName: uploadedFileData.fileName,
-        hasTranscription: !!uploadedFileData.transcription
+        hasTranscription: !!uploadedFileData.transcription,
+        hasS3Url: !!uploadedFileData.fileUrl
       });
       
       setExistingTranscription(freshTranscription);
@@ -232,16 +241,35 @@ export default function WorkflowStep1({ caseId, onTranscriptionComplete, isCompl
                   className="w-full h-12"
                   preload="metadata"
                   onError={(e) => {
-                    console.log('Audio playback error - audio file may not be available in database');
+                    console.log('Audio playback error - audio file may not be available', {
+                      hasConversationId: !!existingTranscription.conversationId,
+                      hasCaseId: !!existingTranscription.caseId,
+                      hasS3Url: !!existingTranscription.s3Url,
+                      isTemp: existingTranscription.id === 'temp-upload'
+                    });
                   }}
                 >
-                  {/* Try conversation ID first, then fall back to case ID */}
-                  {existingTranscription.id !== 'temp-upload' ? (
+                  {/* Try different audio sources in order of preference */}
+                  {existingTranscription.s3Url ? (
+                    // For fresh uploads, use direct S3 URL
                     <>
-                      <source src={`/api/audio-proxy?conversationId=${existingTranscription.id}`} type="audio/mpeg" />
-                      <source src={`/api/audio-proxy?conversationId=${existingTranscription.id}`} type="audio/mp4" />
+                      <source src={existingTranscription.s3Url} type="audio/mpeg" />
+                      <source src={existingTranscription.s3Url} type="audio/mp4" />
+                    </>
+                  ) : existingTranscription.conversationId ? (
+                    // For saved conversations, use conversation ID proxy
+                    <>
+                      <source src={`/api/audio-proxy?conversationId=${existingTranscription.conversationId}`} type="audio/mpeg" />
+                      <source src={`/api/audio-proxy?conversationId=${existingTranscription.conversationId}`} type="audio/mp4" />
+                    </>
+                  ) : existingTranscription.caseId ? (
+                    // Fallback to case ID proxy
+                    <>
+                      <source src={`/api/audio-proxy?caseId=${existingTranscription.caseId}`} type="audio/mpeg" />
+                      <source src={`/api/audio-proxy?caseId=${existingTranscription.caseId}`} type="audio/mp4" />
                     </>
                   ) : caseId ? (
+                    // Last fallback using workflow case ID
                     <>
                       <source src={`/api/audio-proxy?caseId=${caseId}`} type="audio/mpeg" />
                       <source src={`/api/audio-proxy?caseId=${caseId}`} type="audio/mp4" />

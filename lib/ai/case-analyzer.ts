@@ -143,7 +143,7 @@ Extract the following information and return ONLY a JSON object with these exact
 
 {
   "case_name": "The actual case name mentioned (e.g., 'Miller v. New York State Department of Health')",
-  "court_level": "The court level (e.g., 'Supreme Court', 'Federal Court', 'Second Circuit', etc.)",
+  "court_level": "The court level or appellate status (e.g., 'U.S. Supreme Court (Cert Petition from Second Circuit)', 'Second Circuit Court of Appeals', 'Federal District Court', etc.)",
   "constitutional_question": "The specific constitutional question or legal issue being addressed",
   "penalties": "Any specific fines, penalties, or sanctions mentioned (include dollar amounts)",
   "precedent_target": "Key precedent cases mentioned that are being challenged or relied upon"
@@ -152,6 +152,7 @@ Extract the following information and return ONLY a JSON object with these exact
 Rules:
 - Return ONLY valid JSON, no markdown or additional text
 - If a case name is not mentioned, create one based on the parties and legal issue
+- For court level, pay attention to appeals history (e.g., if case "lost at Second Circuit", consider Supreme Court cert petition status)
 - If information is unclear, make reasonable inferences from context
 - Keep constitutional questions specific and legally precise
 - Include specific amounts for penalties if mentioned

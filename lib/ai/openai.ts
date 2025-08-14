@@ -240,4 +240,26 @@ Only extract information that is clearly mentioned or strongly implied in the tr
   }
 }
 
+// Generate text using OpenAI GPT models
+export async function generateText(prompt: string, model: string = 'gpt-4o'): Promise<string> {
+  try {
+    const completion = await openai.chat.completions.create({
+      model,
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 4000
+    });
+
+    return completion.choices[0].message.content || '';
+  } catch (error) {
+    console.error('Text generation error:', error);
+    throw new Error('Failed to generate text');
+  }
+}
+
  

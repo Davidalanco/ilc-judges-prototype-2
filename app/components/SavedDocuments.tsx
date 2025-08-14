@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { FileText, MessageSquare, Plus, Edit3, Calendar, Scale, BookOpen, Download, Eye, ChevronDown, ChevronRight, AlertCircle, CheckCircle, Database, Copy, Code, Search, RefreshCw, Trash2 } from 'lucide-react';
+import { FileText, MessageSquare, Plus, Edit3, Calendar, Scale, BookOpen, Download, Eye, ChevronDown, ChevronRight, AlertCircle, CheckCircle, Database, Copy, Code, Search, RefreshCw, Trash2, Upload, Cloud } from 'lucide-react';
+import DocumentUpload from './DocumentUpload';
 
 interface SavedDocument {
   id: string;
@@ -94,6 +95,7 @@ export default function SavedDocuments({ caseId, userId, refreshTrigger }: Saved
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [newNote, setNewNote] = useState({ title: '', content: '', noteType: 'general', tags: [] });
   const [error, setError] = useState<string | null>(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   // Load saved documents on component mount and when case ID changes
   useEffect(() => {
@@ -145,10 +147,10 @@ export default function SavedDocuments({ caseId, userId, refreshTrigger }: Saved
     }
   };
 
-  const deleteDocument = async (document: SavedDocument) => {
+  const deleteDocument = async (documentToDelete: SavedDocument) => {
     // Show confirmation dialog
     const confirmed = window.confirm(
-      `Are you sure you want to delete "${document.case_title}"?\n\nThis action cannot be undone and will permanently remove the document and all associated notes and analysis.`
+      `Are you sure you want to delete "${documentToDelete.case_title}"?\n\nThis action cannot be undone and will permanently remove the document and all associated notes and analysis.`
     );
     
     if (!confirmed) {
@@ -157,29 +159,29 @@ export default function SavedDocuments({ caseId, userId, refreshTrigger }: Saved
     }
 
     try {
-      console.log(`🗑️ Deleting document: ${document.case_title} (${document.id})`);
+      console.log(`🗑️ Deleting document: ${documentToDelete.case_title} (${documentToDelete.id})`);
       
-      const response = await fetch(`/api/legal/saved-documents/${document.id}`, {
+      const response = await fetch(`/api/legal/saved-documents/${documentToDelete.id}`, {
         method: 'DELETE'
       });
 
       if (response.ok) {
         const result = await response.json();
-        console.log(`✅ Document "${document.case_title}" deleted successfully`, result);
+        console.log(`✅ Document "${documentToDelete.case_title}" deleted successfully`, result);
         
         // Remove document from local state
-        setDocuments(prev => prev.filter(doc => doc.id !== document.id));
+        setDocuments(prev => prev.filter(doc => doc.id !== documentToDelete.id));
         
         // Update grouped documents
         const updatedGrouped = { ...groupedDocuments };
-        if (updatedGrouped[document.document_type]) {
-          updatedGrouped[document.document_type] = updatedGrouped[document.document_type].filter(
-            (doc: SavedDocument) => doc.id !== document.id
+        if (updatedGrouped[documentToDelete.document_type]) {
+          updatedGrouped[documentToDelete.document_type] = updatedGrouped[documentToDelete.document_type].filter(
+            (doc: SavedDocument) => doc.id !== documentToDelete.id
           );
           
           // Remove empty groups
-          if (updatedGrouped[document.document_type].length === 0) {
-            delete updatedGrouped[document.document_type];
+          if (updatedGrouped[documentToDelete.document_type].length === 0) {
+            delete updatedGrouped[documentToDelete.document_type];
           }
         }
         setGroupedDocuments(updatedGrouped);
@@ -189,19 +191,19 @@ export default function SavedDocuments({ caseId, userId, refreshTrigger }: Saved
           setInsights({
             ...insights,
             totalDocuments: insights.totalDocuments - 1,
-            documentsWithAI: insights.documentsWithAI - (document.hasAiAnalysis ? 1 : 0),
-            documentsWithNotes: insights.documentsWithNotes - (document.noteCount > 0 ? 1 : 0)
+            documentsWithAI: insights.documentsWithAI - (documentToDelete.hasAiAnalysis ? 1 : 0),
+            documentsWithNotes: insights.documentsWithNotes - (documentToDelete.noteCount > 0 ? 1 : 0)
           });
         }
         
         // Close preview if this document was selected
-        if (selectedDocument?.id === document.id) {
+        if (selectedDocument?.id === documentToDelete.id) {
           setSelectedDocument(null);
         }
         
         // Show success message
         const toast = document.createElement('div');
-        toast.textContent = `✅ "${document.case_title}" deleted successfully`;
+        toast.textContent = `✅ "${documentToDelete.case_title}" deleted successfully`;
         toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg z-50';
         document.body.appendChild(toast);
         setTimeout(() => {
@@ -216,7 +218,7 @@ export default function SavedDocuments({ caseId, userId, refreshTrigger }: Saved
         
         // Show error message
         const toast = document.createElement('div');
-        toast.textContent = `❌ Failed to delete "${document.case_title}": ${errorData.error || 'Unknown error'}`;
+        toast.textContent = `❌ Failed to delete "${documentToDelete.case_title}": ${errorData.error || 'Unknown error'}`;
         toast.className = 'fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded shadow-lg z-50';
         document.body.appendChild(toast);
         setTimeout(() => {
@@ -230,7 +232,7 @@ export default function SavedDocuments({ caseId, userId, refreshTrigger }: Saved
       
       // Show error message
       const toast = document.createElement('div');
-      toast.textContent = `❌ Error deleting "${document.case_title}": ${error instanceof Error ? error.message : 'Unknown error'}`;
+      toast.textContent = `❌ Error deleting "${documentToDelete.case_title}": ${error instanceof Error ? error.message : 'Unknown error'}`;
       toast.className = 'fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded shadow-lg z-50';
       document.body.appendChild(toast);
       setTimeout(() => {
@@ -288,12 +290,25 @@ export default function SavedDocuments({ caseId, userId, refreshTrigger }: Saved
 
   const getDocumentTypeLabel = (type: string) => {
     const labels = {
+      // Court Decisions & Opinions
       'decision': 'Court Decisions',
       'dissent': 'Dissenting Opinions', 
       'concurrence': 'Concurring Opinions',
+      'opinion_court_below': 'Opinions from Court Below',
+      
+      // Briefs
       'brief_petitioner': 'Petitioner Briefs',
       'brief_respondent': 'Respondent Briefs',
-      'brief_amicus': 'Amicus Briefs'
+      'brief_amicus': 'Amicus Briefs',
+      
+      // Case Materials
+      'case_analysis': 'Case Analysis & Memoranda',
+      'other_citations': 'Other Documents',
+      'record_appendix': 'Record & Appendix',
+      
+      // General
+      'other': 'Other Documents',
+      'user_upload': 'Uploaded Documents'
     };
     return (labels as any)[type] || 'Other Documents';
   };
@@ -423,14 +438,23 @@ export default function SavedDocuments({ caseId, userId, refreshTrigger }: Saved
               <Scale className="w-5 h-5 mr-2 text-blue-600" />
               Research Overview
             </h2>
-            <button
-              onClick={loadSavedDocuments}
-              disabled={isLoading}
-              className="flex items-center space-x-1 px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
-            </button>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => setShowUploadModal(true)}
+                className="flex items-center space-x-1 px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+              >
+                <Cloud className="w-3 h-3" />
+                <span>Upload Document</span>
+              </button>
+              <button
+                onClick={loadSavedDocuments}
+                disabled={isLoading}
+                className="flex items-center space-x-1 px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
+            </div>
           </div>
           
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -465,7 +489,14 @@ export default function SavedDocuments({ caseId, userId, refreshTrigger }: Saved
         <div className="text-center py-8">
           <BookOpen className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">No Documents Saved Yet</h3>
-          <p className="text-gray-600">Use the legal research tool to find and save documents for this case.</p>
+          <p className="text-gray-600 mb-4">Use the legal research tool to find and save documents, or upload your own documents for this case.</p>
+          <button
+            onClick={() => setShowUploadModal(true)}
+            className="inline-flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+          >
+            <Cloud className="w-4 h-4" />
+            <span>Upload Document</span>
+          </button>
         </div>
       ) : (
         Object.entries(groupedDocuments).map(([type, docs]) => {
@@ -689,6 +720,20 @@ export default function SavedDocuments({ caseId, userId, refreshTrigger }: Saved
             </div>
           </div>
         </div>
+      )}
+
+      {/* Document Upload Modal */}
+      {showUploadModal && (
+        <DocumentUpload
+          caseId={caseId}
+          userId={userId}
+          onUploadComplete={(document) => {
+            console.log('📁 Document uploaded successfully:', document);
+            setShowUploadModal(false);
+            loadSavedDocuments(); // Refresh the document list
+          }}
+          onClose={() => setShowUploadModal(false)}
+        />
       )}
     </div>
   );

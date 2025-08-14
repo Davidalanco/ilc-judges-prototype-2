@@ -1,16 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { supabaseAdmin } from '@/lib/supabase';
+import '@/types/auth';
 
 export async function POST(request: NextRequest) {
   try {
+    // Check authentication
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { transcription, fileName, fileSize, duration, language } = await request.json();
     
     if (!transcription) {
       return NextResponse.json({ error: 'Transcription is required' }, { status: 400 });
     }
 
-    // For now, using existing user from working case - TODO: Get from actual authentication
-    const userId = '37dc83ba-123b-4c86-9c61-903c085193a0';
+    const userId = session.user.id;
 
     // Create a new case record with the transcription
     const { data: caseData, error: caseError } = await supabaseAdmin

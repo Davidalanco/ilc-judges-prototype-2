@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { db, supabase } from '@/lib/db';
 import '@/types/auth';
 
@@ -8,12 +9,11 @@ export async function GET(
   { params }: { params: { caseId: string } }
 ) {
   try {
-    // Check authentication - bypass for development
-    // const session = await getServerSession();
-    // if (!session?.user?.id) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    // }
-    console.log('🔍 GET /api/cases/[caseId] - bypassing auth for development');
+    // Check authentication
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     const { caseId } = params;
 
@@ -23,10 +23,10 @@ export async function GET(
       return NextResponse.json({ error: 'Case not found' }, { status: 404 });
     }
 
-    // Check if user owns the case - skip ownership check in dev
-    // if (caseData.user_id !== session.user.id) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
-    // }
+    // Check if user owns the case
+    if (caseData.user_id !== session.user.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    }
 
     // Get related data
     const conversations = await db.getConversationsByCase(caseId);
@@ -44,9 +44,15 @@ export async function GET(
       return acc;
     }, {} as Record<string, any[]>);
 
+    // Map case_type to court_level for frontend compatibility
+    const mappedCaseData = {
+      ...caseData,
+      court_level: caseData.case_type || '' // Map case_type to court_level
+    };
+
     return NextResponse.json({
       success: true,
-      case: caseData,
+      case: mappedCaseData,
       conversations,
       justiceAnalysis,
       briefChats: chatsBySectionId
@@ -66,32 +72,44 @@ export async function PATCH(
   { params }: { params: { caseId: string } }
 ) {
   try {
-    // Check authentication - bypass for development
-    // const session = await getServerSession();
-    // if (!session?.user?.id) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    // }
-    console.log('🔄 PATCH /api/cases/[caseId] - bypassing auth for development');
+    // Check authentication
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     const { caseId } = params;
     const updates = await request.json();
 
-    // Get the case first to verify ownership - skip ownership check in dev
+    // Get the case first to verify ownership
     const caseData = await db.getCaseById(caseId);
     if (!caseData) {
       return NextResponse.json({ error: 'Case not found' }, { status: 404 });
     }
 
-    // if (caseData.user_id !== session.user.id) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
-    // }
+    if (caseData.user_id !== session.user.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    }
+
+    // Map court_level to case_type for database storage
+    const dbUpdates = { ...updates };
+    if (updates.court_level !== undefined) {
+      dbUpdates.case_type = updates.court_level;
+      delete dbUpdates.court_level; // Remove so it doesn't cause errors
+    }
 
     // Update the case
-    const updatedCase = await db.updateCase(caseId, updates);
+    const updatedCase = await db.updateCase(caseId, dbUpdates);
+
+    // Map case_type back to court_level for response
+    const mappedUpdatedCase = {
+      ...updatedCase,
+      court_level: updatedCase.case_type || ''
+    };
 
     return NextResponse.json({
       success: true,
-      case: updatedCase,
+      case: mappedUpdatedCase,
       message: 'Case updated successfully'
     });
 
@@ -109,24 +127,23 @@ export async function DELETE(
   { params }: { params: { caseId: string } }
 ) {
   try {
-    // Check authentication - bypass for development
-    // const session = await getServerSession();
-    // if (!session?.user?.id) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    // }
-    console.log('🗑️ DELETE /api/cases/[caseId] - bypassing auth for development');
+    // Check authentication
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     const { caseId } = params;
 
-    // Get the case first to verify ownership - skip ownership check in dev
+    // Get the case first to verify ownership
     const caseData = await db.getCaseById(caseId);
     if (!caseData) {
       return NextResponse.json({ error: 'Case not found' }, { status: 404 });
     }
 
-    // if (caseData.user_id !== session.user.id) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
-    // }
+    if (caseData.user_id !== session.user.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    }
 
     // Delete the case using Supabase client (CASCADE will handle related records)
     const { error: deleteError } = await supabase

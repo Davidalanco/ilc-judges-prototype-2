@@ -8,9 +8,9 @@ export default function Navigation() {
 
   const navItems = [
     { href: '/', label: 'Home' },
-    { href: '/ai-brief', label: '🏛️ AI Brief Builder', className: 'bg-blue-100 text-blue-800 font-semibold' },
     { href: '/workflow', label: 'Workflow (Real)' },
     { href: '/transcriptions', label: 'Transcriptions' },
+    { href: '/ai-brief', label: 'AI Brief Builder', className: 'bg-blue-100 text-blue-800' },
     { href: '/prototype', label: 'Prototype (Visual Reference)', className: 'bg-yellow-100 text-yellow-800' },
     { href: '/analysis/amish-vaccination-case', label: 'Analysis' },
     { href: '/justices', label: 'Justices' },

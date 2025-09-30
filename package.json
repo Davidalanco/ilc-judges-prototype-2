@@ -9,31 +9,33 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.59.0",
-    "@aws-sdk/client-s3": "^3.478.0",
-    "@elevenlabs/elevenlabs-js": "^2.7.0",
+    "@anthropic-ai/sdk": "^0.65.0",
+    "@aws-sdk/client-s3": "^3.899.0",
+    "@elevenlabs/elevenlabs-js": "^2.16.0",
     "@supabase/storage-js": "^2.10.2",
-    "@supabase/supabase-js": "^2.52.0",
+    "@supabase/supabase-js": "^2.58.0",
+    "@types/pdf-parse": "^1.1.5",
     "@vercel/postgres": "^0.5.1",
     "dotenv": "^17.2.1",
-    "lucide-react": "^0.294.0",
-    "next": "14.0.4",
+    "lucide-react": "^0.544.0",
+    "next": "^15.5.4",
     "next-auth": "^4.24.5",
     "node-fetch": "^3.3.2",
-    "openai": "^4.20.1",
+    "openai": "^5.23.2",
+    "pdf-parse": "^1.1.1",
     "pg": "^8.16.3",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
   },
   "devDependencies": {
     "@types/node": "^20.10.5",
-    "@types/react": "^18.2.45",
-    "@types/react-dom": "^18.2.18",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
     "autoprefixer": "^10.4.16",
     "eslint": "^8.56.0",
-    "eslint-config-next": "14.0.4",
+    "eslint-config-next": "^15.5.4",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.9.2"
   }
 }

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Upload, FileText, Brain, Shield, ArrowRight, CheckCircle } from 'lucide-react';
+import Navigation from './components/Navigation';
 
 export default function Home() {
   const [isDragging, setIsDragging] = useState(false);
@@ -43,7 +44,9 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <>
+      <Navigation />
+      <div className="min-h-screen bg-gray-50">
 
       {/* Hero Section */}
       <section className="bg-gradient-to-b from-blue-50 to-white py-12">
@@ -354,5 +357,6 @@ export default function Home() {
         </div>
       </section>
     </div>
+    </>
   );
 } 

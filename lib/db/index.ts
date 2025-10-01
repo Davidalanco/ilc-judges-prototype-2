@@ -3,6 +3,10 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+if (!supabaseUrl || !supabaseServiceKey) {
+  throw new Error('Missing Supabase environment variables. Please check NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local');
+}
+
 // Create Supabase client with service role key for database operations
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -149,32 +153,44 @@ export const db = {
     duration_seconds?: number;
     user_id?: string;
   }) {
-    // Use actual database schema field names
-    const insertData: any = {
-      case_id: conversationData.case_id,
-      user_id: conversationData.user_id || null, // This field exists but can be null
-      file_name: conversationData.file_name,
-      file_size: conversationData.file_size,
-      file_type: conversationData.file_type,
-      s3_url: conversationData.s3_url,
-      upload_status: 'completed',
-      transcription_status: 'pending',
-      status: 'uploaded' // This field exists
-    };
-    
-    // Add duration_seconds if provided (field exists in schema)
-    if (conversationData.duration_seconds) {
-      insertData.duration_seconds = conversationData.duration_seconds;
+    try {
+      // Use actual database schema field names
+      const insertData: any = {
+        case_id: conversationData.case_id,
+        user_id: conversationData.user_id || null, // This field exists but can be null
+        file_name: conversationData.file_name,
+        file_size: conversationData.file_size,
+        file_type: conversationData.file_type,
+        s3_url: conversationData.s3_url,
+        upload_status: 'completed',
+        transcription_status: 'pending',
+        status: 'uploaded' // This field exists
+      };
+      
+      // Add duration_seconds if provided (field exists in schema)
+      if (conversationData.duration_seconds) {
+        insertData.duration_seconds = conversationData.duration_seconds;
+      }
+      
+      console.log('💾 Creating conversation with data:', JSON.stringify(insertData, null, 2));
+      
+      const { data, error } = await supabase
+        .from('attorney_conversations')
+        .insert(insertData)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('❌ Database insert error:', error);
+        throw error;
+      }
+      
+      console.log('✅ Conversation created successfully:', data.id);
+      return data;
+    } catch (error) {
+      console.error('❌ Error in createConversation:', error);
+      throw error;
     }
-    
-    const { data, error } = await supabase
-      .from('attorney_conversations')
-      .insert(insertData)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
   },
 
   async updateConversation(id: string, updates: Partial<{
@@ -186,64 +202,81 @@ export const db = {
     key_issues: any;
     status: string;
   }>) {
-    // Use actual database schema field names
-    const dbUpdates: any = {};
-    
-    // Update transcript in both fields (transcript and transcription_text exist)
-    if (updates.transcript) {
-      dbUpdates.transcript = updates.transcript;
-      dbUpdates.transcription_text = updates.transcript;
-      dbUpdates.transcription_status = 'completed';
+    try {
+      // Use actual database schema field names
+      const dbUpdates: any = {};
+      
+      // Update transcript in both fields (transcript and transcription_text exist)
+      if (updates.transcript) {
+        dbUpdates.transcript = updates.transcript;
+        dbUpdates.transcription_text = updates.transcript;
+        dbUpdates.transcription_status = 'completed';
+      }
+      
+      // Update individual fields that exist in schema
+      if (updates.transcript_quality !== undefined) {
+        dbUpdates.transcript_quality = updates.transcript_quality;
+      }
+      
+      if (updates.speaker_count !== undefined) {
+        dbUpdates.speaker_count = updates.speaker_count;
+      }
+      
+      if (updates.speakers) {
+        dbUpdates.speakers = updates.speakers;
+      }
+      
+      if (updates.status) {
+        dbUpdates.status = updates.status;
+      }
+      
+      // Get existing analysis_result to merge with new data
+      const { data: existingRecord, error: selectError } = await supabase
+        .from('attorney_conversations')
+        .select('analysis_result')
+        .eq('id', id)
+        .single();
+      
+      if (selectError && selectError.code !== 'PGRST116') {
+        console.error('Error fetching existing record:', selectError);
+        throw selectError;
+      }
+      
+      // Start with existing analysis_result or empty object
+      const analysisResult: any = existingRecord?.analysis_result || {};
+      
+      if (updates.analysis) {
+        // Merge existing analysis data
+        Object.assign(analysisResult, updates.analysis);
+      }
+      
+      if (updates.key_issues) {
+        analysisResult.key_topics = updates.key_issues;
+      }
+      
+      // Always set analysis_result to preserve existing data
+      dbUpdates.analysis_result = analysisResult;
+      
+      console.log('🔄 Updating conversation with data:', JSON.stringify(dbUpdates, null, 2));
+      
+      const { data, error } = await supabase
+        .from('attorney_conversations')
+        .update(dbUpdates)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('❌ Database update error:', error);
+        throw error;
+      }
+      
+      console.log('✅ Conversation updated successfully:', data.id);
+      return data;
+    } catch (error) {
+      console.error('❌ Error in updateConversation:', error);
+      throw error;
     }
-    
-    // Update individual fields that exist in schema
-    if (updates.transcript_quality !== undefined) {
-      dbUpdates.transcript_quality = updates.transcript_quality;
-    }
-    
-    if (updates.speaker_count !== undefined) {
-      dbUpdates.speaker_count = updates.speaker_count;
-    }
-    
-    if (updates.speakers) {
-      dbUpdates.speakers = updates.speakers;
-    }
-    
-    if (updates.status) {
-      dbUpdates.status = updates.status;
-    }
-    
-    // Get existing analysis_result to merge with new data
-    const { data: existingRecord } = await supabase
-      .from('attorney_conversations')
-      .select('analysis_result')
-      .eq('id', id)
-      .single();
-    
-    // Start with existing analysis_result or empty object
-    const analysisResult: any = existingRecord?.analysis_result || {};
-    
-    if (updates.analysis) {
-      // Merge existing analysis data
-      Object.assign(analysisResult, updates.analysis);
-    }
-    
-    if (updates.key_issues) {
-      analysisResult.key_topics = updates.key_issues;
-    }
-    
-    // Always set analysis_result to preserve existing data
-    dbUpdates.analysis_result = analysisResult;
-    
-    const { data, error } = await supabase
-      .from('attorney_conversations')
-      .update(dbUpdates)
-      .eq('id', id)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
   },
 
   async getConversationsByCase(caseId: string) {

@@ -1,32 +1,189 @@
 'use client';
 
 import { useState } from 'react';
-import { Gavel, Scale, FileText, CheckCircle, ArrowRight } from 'lucide-react';
+import { Gavel, Scale, FileText, CheckCircle, ArrowRight, Upload, FileAudio, Trash2, AlertCircle } from 'lucide-react';
+import FileUpload from '@/app/components/FileUpload';
+import SpeakerTranscriptDisplay from '@/app/components/SpeakerTranscriptDisplay';
 
 interface BriefCaseInformationInputProps {
   onCaseInfoChange: (caseInfo: any) => void;
   initialData?: any;
+  onSubmit?: () => void;
+  onProceedToBrief?: () => void;
 }
 
-export function BriefCaseInformationInput({ onCaseInfoChange, initialData }: BriefCaseInformationInputProps) {
+interface TranscriptionData {
+  fileName: string;
+  fileUrl: string;
+  fileSize: number;
+  duration?: string;
+  transcription?: string;
+  language?: string;
+  speakers?: any[];
+  speakerCount?: number;
+  s3Key?: string;
+  conversationId?: string;
+  segments?: any[];
+}
+
+export function BriefCaseInformationInput({ onCaseInfoChange, initialData, onSubmit, onProceedToBrief }: BriefCaseInformationInputProps) {
   const [caseInfo, setCaseInfo] = useState({
-    caseName: initialData?.caseName || '',
-    legalIssue: initialData?.legalIssue || '',
-    courtLevel: initialData?.courtLevel || 'U.S. Supreme Court',
-    petitioner: initialData?.petitioner || '',
-    respondent: initialData?.respondent || '',
-    keyPrecedents: initialData?.keyPrecedents || [],
-    constitutionalQuestions: initialData?.constitutionalQuestions || [],
-    overallTheme: initialData?.overallTheme || ''
+    caseName: '',
+    legalIssue: '',
+    courtLevel: 'U.S. Supreme Court',
+    petitioner: '',
+    respondent: '',
+    keyPrecedents: [],
+    constitutionalQuestions: [],
+    overallTheme: ''
   });
 
   const [newPrecedent, setNewPrecedent] = useState('');
   const [newQuestion, setNewQuestion] = useState('');
+  const [transcriptionData, setTranscriptionData] = useState<TranscriptionData | null>(null);
+  const [showTranscriptionUpload, setShowTranscriptionUpload] = useState(false);
+  const [showTranscriptionPaste, setShowTranscriptionPaste] = useState(false);
+  const [pastedTranscription, setPastedTranscription] = useState('');
+  const [isAnalyzingTranscription, setIsAnalyzingTranscription] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const updateCaseInfo = (updates: any) => {
     const newCaseInfo = { ...caseInfo, ...updates };
     setCaseInfo(newCaseInfo);
-    onCaseInfoChange(newCaseInfo);
+    onCaseInfoChange({ ...newCaseInfo, transcriptionData });
+  };
+
+  const handleTranscriptionUpload = async (fileData: TranscriptionData) => {
+    console.log('📄 Transcription uploaded:', fileData.fileName);
+    setTranscriptionData(fileData);
+    setShowTranscriptionUpload(false);
+    setIsAnalyzingTranscription(true);
+    
+    try {
+      setAnalysisError(null);
+      // Use AI to intelligently extract case information from transcription
+      const extractedInfo = await extractCaseInfoWithAI(fileData.transcription || '');
+      
+      // Store transcription and case info in database
+      await storeCaseAndTranscription(extractedInfo, fileData);
+      
+      // Update case info with both transcription data and extracted information
+      const updatedCaseInfo = { ...caseInfo, ...extractedInfo, transcriptionData: fileData };
+      setCaseInfo(updatedCaseInfo);
+      onCaseInfoChange(updatedCaseInfo);
+    } catch (error) {
+      console.error('❌ Error processing transcription:', error);
+      setAnalysisError(error instanceof Error ? error.message : 'Failed to analyze transcription');
+    } finally {
+      setIsAnalyzingTranscription(false);
+    }
+  };
+
+  const extractCaseInfoWithAI = async (transcription: string): Promise<Partial<typeof caseInfo>> => {
+    console.log('🤖 Using AI to analyze transcription...');
+    
+    const response = await fetch('/api/ai/analyze-transcription', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        transcription: transcription
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`AI analysis failed: ${errorData.error || 'Unknown error'}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ AI analysis complete:', result);
+    
+    return result.extractedInfo || {};
+  };
+
+  const storeCaseAndTranscription = async (extractedInfo: Partial<typeof caseInfo>, transcriptionData: TranscriptionData) => {
+    try {
+      console.log('💾 Storing case and transcription in database...');
+      
+      const response = await fetch('/api/cases/store-case-transcription', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          caseInfo: extractedInfo,
+          transcriptionData: transcriptionData
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to store case and transcription');
+      }
+
+      const result = await response.json();
+      console.log('✅ Case and transcription stored:', result);
+      
+      return result;
+    } catch (error) {
+      console.error('❌ Error storing case and transcription:', error);
+      throw error;
+    }
+  };
+
+  const handleTranscriptionError = (error: string) => {
+    console.error('❌ Transcription upload error:', error);
+    // You could add error state handling here
+  };
+
+  const removeTranscription = () => {
+    setTranscriptionData(null);
+    onCaseInfoChange({ ...caseInfo, transcriptionData: null });
+  };
+
+  const handlePastedTranscription = async () => {
+    if (!pastedTranscription.trim()) return;
+    
+    console.log('📄 Pasted transcription processed');
+    setIsAnalyzingTranscription(true);
+    
+    try {
+      setAnalysisError(null);
+      // Create a mock transcription data object
+      const mockTranscriptionData: TranscriptionData = {
+        fileName: 'Pasted Transcription',
+        fileUrl: '',
+        fileSize: pastedTranscription.length,
+        duration: 'Unknown',
+        transcription: pastedTranscription,
+        language: 'en',
+        speakers: [],
+        speakerCount: 0,
+        s3Key: '',
+        conversationId: '',
+        segments: []
+      };
+      
+      // Use AI to intelligently extract case information from pasted transcription
+      const extractedInfo = await extractCaseInfoWithAI(pastedTranscription);
+      
+      // Store transcription and case info in database
+      await storeCaseAndTranscription(extractedInfo, mockTranscriptionData);
+      
+      // Update case info with both transcription data and extracted information
+      const updatedCaseInfo = { ...caseInfo, ...extractedInfo, transcriptionData: mockTranscriptionData };
+      setCaseInfo(updatedCaseInfo);
+      onCaseInfoChange(updatedCaseInfo);
+      setTranscriptionData(mockTranscriptionData);
+      setShowTranscriptionPaste(false);
+      setPastedTranscription('');
+    } catch (error) {
+      console.error('❌ Error processing pasted transcription:', error);
+      setAnalysisError(error instanceof Error ? error.message : 'Failed to analyze transcription');
+    } finally {
+      setIsAnalyzingTranscription(false);
+    }
   };
 
   const addPrecedent = () => {
@@ -65,8 +222,188 @@ export function BriefCaseInformationInput({ onCaseInfoChange, initialData }: Bri
           🏛️ Set Up Your Amicus Brief
         </h2>
         <p className="text-gray-600">
-          Provide the essential case information to generate your AI-powered amicus brief
+          Start by uploading your strategy session recording, then review and complete the case information.
         </p>
+      </div>
+
+      {/* Transcription Upload Section - MOVED TO TOP */}
+      <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-6">
+        <div className="flex items-center space-x-2 mb-4">
+          <FileAudio className="w-5 h-5 text-indigo-600" />
+          <h3 className="text-lg font-semibold text-gray-900">Strategy Session Recording</h3>
+          <span className="text-sm text-indigo-600 font-medium">(Auto-fills form below)</span>
+        </div>
+        
+        <p className="text-indigo-700 text-sm mb-4">
+          Upload audio recordings or paste existing transcriptions of your legal team's strategy discussions. 
+          Our AI will transcribe and automatically extract case information to populate the form below.
+        </p>
+        
+        {!transcriptionData && !showTranscriptionUpload && !showTranscriptionPaste && !isAnalyzingTranscription && (
+          <div className="flex space-x-3">
+            <button
+              onClick={() => setShowTranscriptionUpload(true)}
+              className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              <Upload className="w-4 h-4" />
+              <span>Upload Audio Recording</span>
+            </button>
+            <button
+              onClick={() => setShowTranscriptionPaste(true)}
+              className="flex items-center space-x-2 px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              <span>Paste Transcription</span>
+            </button>
+          </div>
+        )}
+
+        {isAnalyzingTranscription && (
+          <div className="flex items-center justify-center space-x-3 p-6 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
+            <div className="text-indigo-700">
+              <p className="font-medium">AI is analyzing your transcription...</p>
+              <p className="text-sm">Extracting case information and populating form fields</p>
+            </div>
+          </div>
+        )}
+
+        {analysisError && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+            <div className="flex items-start space-x-3">
+              <div className="flex-shrink-0">
+                <AlertCircle className="w-5 h-5 text-red-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-medium text-red-800">
+                  AI Analysis Failed
+                </h3>
+                <div className="mt-2 text-sm text-red-700">
+                  <p>{analysisError}</p>
+                  <p className="mt-1">
+                    Please check your OpenAI API key configuration in <code className="bg-red-100 px-1 rounded">.env.local</code>
+                  </p>
+                </div>
+                <div className="mt-3">
+                  <button
+                    onClick={() => setAnalysisError(null)}
+                    className="text-red-600 hover:text-red-800 text-sm font-medium"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+
+        {showTranscriptionUpload && !transcriptionData && (
+          <div className="space-y-4">
+            <FileUpload 
+              onUploadComplete={handleTranscriptionUpload}
+              onUploadError={handleTranscriptionError}
+              acceptedTypes=".mp3,.wav,.m4a,.mp4,.mov,.webm"
+              maxSizeMB={50}
+            />
+            <button
+              onClick={() => setShowTranscriptionUpload(false)}
+              className="text-indigo-600 hover:text-indigo-800 text-sm"
+            >
+              Cancel Upload
+            </button>
+          </div>
+        )}
+
+        {showTranscriptionPaste && !transcriptionData && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Paste Your Transcription
+              </label>
+              <textarea
+                value={pastedTranscription}
+                onChange={(e) => setPastedTranscription(e.target.value)}
+                placeholder="Paste your strategy session transcription here... (supports timestamps and speaker labels)"
+                rows={8}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-vertical"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Supports various formats including timestamps, speaker labels, and plain text
+              </p>
+            </div>
+            <div className="flex space-x-3">
+              <button
+                onClick={handlePastedTranscription}
+                disabled={!pastedTranscription.trim() || isAnalyzingTranscription}
+                className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isAnalyzingTranscription ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <span>Analyzing...</span>
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-4 h-4" />
+                    <span>Process Transcription</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  setShowTranscriptionPaste(false);
+                  setPastedTranscription('');
+                }}
+                className="text-indigo-600 hover:text-indigo-800 text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {transcriptionData && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg p-3">
+              <div className="flex items-center space-x-3">
+                <FileAudio className="w-5 h-5 text-green-600" />
+                <div>
+                  <p className="font-medium text-green-900">{transcriptionData.fileName}</p>
+                  <p className="text-sm text-green-700">
+                    {transcriptionData.duration && `${transcriptionData.duration} • `}
+                    {transcriptionData.speakerCount && `${transcriptionData.speakerCount} speakers • `}
+                    {Math.round(transcriptionData.fileSize / 1024 / 1024 * 100) / 100} MB
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={removeTranscription}
+                className="text-red-600 hover:text-red-800 p-1"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+
+            {transcriptionData.transcription && (
+              <div className="border border-gray-200 rounded-lg">
+                <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
+                  <h4 className="font-medium text-gray-900">Transcription Preview</h4>
+                </div>
+                <div className="max-h-64 overflow-y-auto">
+                  <SpeakerTranscriptDisplay
+                    segments={transcriptionData.segments || []}
+                    speakers={transcriptionData.speakers || []}
+                    transcription={transcriptionData.transcription}
+                    showTimestamps={true}
+                    showSpeakerStats={false}
+                    maxHeight="max-h-64"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Main Form */}
@@ -261,6 +598,7 @@ export function BriefCaseInformationInput({ onCaseInfoChange, initialData }: Bri
           />
         </div>
 
+
         {/* Completion Status */}
         <div className="pt-6 border-t border-gray-200">
           <div className={`flex items-center justify-between p-4 rounded-lg ${
@@ -286,7 +624,21 @@ export function BriefCaseInformationInput({ onCaseInfoChange, initialData }: Bri
             </div>
             
             {isComplete && (
-              <ArrowRight className="w-5 h-5 text-green-600" />
+              <div className="flex items-center space-x-4">
+                {transcriptionData && (
+                  <div className="text-sm text-green-600">
+                    <p className="font-medium">✅ AI Analysis Complete</p>
+                    <p>Case information extracted</p>
+                  </div>
+                )}
+                <button
+                  onClick={onProceedToBrief}
+                  className="flex items-center space-x-2 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                >
+                  <span>Proceed to Brief Writing</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
             )}
           </div>
         </div>

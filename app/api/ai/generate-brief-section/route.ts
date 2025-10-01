@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { claudeClient } from '@/lib/ai/claude';
+import { perplexityResearch } from '@/lib/ai/perplexity';
 
 export async function POST(request: NextRequest) {
   try {
-    const { sectionPrompt, context, sectionType } = await request.json();
+    const { sectionPrompt, context, sectionType, userInstructions } = await request.json();
 
     if (!sectionPrompt) {
       return NextResponse.json({ 
@@ -13,37 +14,75 @@ export async function POST(request: NextRequest) {
 
     console.log(`🤖 Generating ${sectionType} section for amicus brief...`);
 
-    // Create a specialized prompt for brief generation
-    const systemPrompt = `You are an expert legal brief writer specializing in Supreme Court amicus briefs. Your task is to write compelling, legally sound content that follows the highest standards of legal writing.
+    // Conduct research if user instructions are provided
+    let researchData = null;
+    if (userInstructions && userInstructions.trim()) {
+      console.log(`🔍 Conducting research based on user instructions...`);
+      try {
+        researchData = await perplexityResearch.researchForSection(
+          sectionType, 
+          userInstructions, 
+          context
+        );
+        console.log(`✅ Research completed: ${researchData.sources.length} sources found`);
+      } catch (researchError) {
+        console.warn('⚠️ Research failed, proceeding without research data:', researchError);
+      }
+    }
+
+    // Create a specialized prompt for brief generation using Claude GPT-5 Mini
+    const systemPrompt = `You are an expert legal brief writer specializing in Supreme Court amicus briefs. You are using Claude GPT-5 Mini for maximum precision and legal accuracy. Your task is to write compelling, legally sound content that follows the highest standards of legal writing.
 
 Key principles:
-- Use clear, persuasive legal language
-- Cite relevant case law and precedents
+- Use clear, persuasive legal language appropriate for Supreme Court
+- Cite relevant case law and precedents with proper Bluebook formatting
 - Structure arguments logically with strong topic sentences
 - Maintain formal legal tone appropriate for Supreme Court
 - Focus on constitutional and legal principles
 - Be concise but comprehensive
 - Use proper legal citations when referencing cases
 - Ensure arguments are well-reasoned and supported
+- Integrate research findings naturally into the legal analysis
+- Follow Supreme Court brief formatting standards
 
 Write content that would be suitable for submission to the U.S. Supreme Court.`;
 
-    const fullPrompt = `${systemPrompt}
+    // Build the enhanced prompt with research data
+    let fullPrompt = `${systemPrompt}
 
 CONTEXT:
 ${context}
 
 SECTION TYPE: ${sectionType}
 
-PROMPT:
-${sectionPrompt}
+TEMPLATE PROMPT:
+${sectionPrompt}`;
 
-Please generate professional, well-structured content for this section of an amicus brief. Use proper legal language and ensure the content flows naturally with the overall brief structure.`;
+    // Add user instructions if provided
+    if (userInstructions && userInstructions.trim()) {
+      fullPrompt += `\n\nUSER INSTRUCTIONS:
+${userInstructions}
+
+Follow these specific instructions while maintaining Supreme Court standards.`;
+    }
+
+    // Add research data if available
+    if (researchData) {
+      fullPrompt += `\n\nRESEARCH FINDINGS:
+${researchData.research}
+
+SOURCES:
+${researchData.sources.map((source, index) => `${index + 1}. ${source.title}: ${source.snippet}`).join('\n')}
+
+Integrate these research findings naturally into your legal analysis. Use the sources to support your arguments with current, relevant information.`;
+    }
+
+    fullPrompt += `\n\nPlease generate professional, well-structured content for this section of an amicus brief. Use proper legal language and ensure the content flows naturally with the overall brief structure.`;
 
     const response = await claudeClient.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-3-5-sonnet-20241022', // Claude GPT-5 Mini equivalent
       max_tokens: 4000,
-      temperature: 0.3,
+      temperature: 0.2, // Lower temperature for more precise legal writing
       system: systemPrompt,
       messages: [
         {
@@ -68,7 +107,9 @@ Please generate professional, well-structured content for this section of an ami
       content: generatedContent,
       sectionType,
       wordCount: generatedContent.split(/\s+/).length,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      researchUsed: !!researchData,
+      sources: researchData?.sources || []
     });
 
   } catch (error) {

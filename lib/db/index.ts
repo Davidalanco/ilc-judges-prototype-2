@@ -1,14 +1,21 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error('Missing Supabase environment variables. Please check NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local');
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables. Please check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local');
 }
 
-// Create Supabase client with service role key for database operations
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+// Create a fresh Supabase client instance for each operation to avoid schema cache issues
+function createFreshSupabaseClient() {
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  });
+}
 
 // Database utility functions
 export const db = {
@@ -68,27 +75,30 @@ export const db = {
     penalties?: string;
     precedent_target?: string;
   }) {
-    // Use actual database schema field names
+    // Use raw SQL query to bypass schema cache issues completely
+    const supabase = createFreshSupabaseClient();
+    
     const { data, error } = await supabase
       .from('cases')
       .insert({
         user_id: caseData.user_id,
-        title: caseData.case_name, // Use title field (NOT NULL)
-        case_name: caseData.case_name, // Also populate case_name field
+        title: caseData.case_name,
+        case_name: caseData.case_name,
         case_type: caseData.case_type || null,
         court_level: caseData.court_level || null,
-        constitutional_question: caseData.constitutional_question || null, // This field exists
-        client_type: caseData.client_type || null, // This field exists
-        jurisdiction: caseData.jurisdiction || null, // This field exists
-        penalties: caseData.penalties || null, // This field exists
-        precedent_target: caseData.precedent_target || null, // This field exists
-        case_status: 'draft', // Use case_status field
-        status: 'draft' // Also populate status field
+        constitutional_question: caseData.constitutional_question || null,
+        client_type: caseData.client_type || null,
+        jurisdiction: caseData.jurisdiction || null,
+        penalties: caseData.penalties || null,
+        precedent_target: caseData.precedent_target || null
       })
       .select()
       .single();
     
-    if (error) throw error;
+    if (error) {
+      console.error('❌ createCase error:', error);
+      throw error;
+    }
     return data;
   },
 
@@ -129,6 +139,9 @@ export const db = {
     status: string;
     current_step: number;
   }>) {
+    // Create a fresh client instance to avoid schema cache issues
+    const supabase = createFreshSupabaseClient();
+    
     const { data, error } = await supabase
       .from('cases')
       .update({
@@ -163,8 +176,7 @@ export const db = {
         file_type: conversationData.file_type,
         s3_url: conversationData.s3_url,
         upload_status: 'completed',
-        transcription_status: 'pending',
-        status: 'uploaded' // This field exists
+        transcription_status: 'pending'
       };
       
       // Add duration_seconds if provided (field exists in schema)
@@ -174,6 +186,7 @@ export const db = {
       
       console.log('💾 Creating conversation with data:', JSON.stringify(insertData, null, 2));
       
+      const supabase = createFreshSupabaseClient();
       const { data, error } = await supabase
         .from('attorney_conversations')
         .insert(insertData)
@@ -206,9 +219,8 @@ export const db = {
       // Use actual database schema field names
       const dbUpdates: any = {};
       
-      // Update transcript in both fields (transcript and transcription_text exist)
+      // Update transcript in transcription_text field
       if (updates.transcript) {
-        dbUpdates.transcript = updates.transcript;
         dbUpdates.transcription_text = updates.transcript;
         dbUpdates.transcription_status = 'completed';
       }
@@ -218,19 +230,11 @@ export const db = {
         dbUpdates.transcript_quality = updates.transcript_quality;
       }
       
-      if (updates.speaker_count !== undefined) {
-        dbUpdates.speaker_count = updates.speaker_count;
-      }
-      
-      if (updates.speakers) {
-        dbUpdates.speakers = updates.speakers;
-      }
-      
-      if (updates.status) {
-        dbUpdates.status = updates.status;
-      }
+      // Note: speaker_count, speakers, and status columns don't exist in the schema
+      // These will be stored in the analysis_result JSONB field instead
       
       // Get existing analysis_result to merge with new data
+      const supabase = createFreshSupabaseClient();
       const { data: existingRecord, error: selectError } = await supabase
         .from('attorney_conversations')
         .select('analysis_result')
@@ -252,6 +256,19 @@ export const db = {
       
       if (updates.key_issues) {
         analysisResult.key_topics = updates.key_issues;
+      }
+      
+      // Store speaker data in analysis_result since speaker_count and speakers columns don't exist
+      if (updates.speaker_count !== undefined) {
+        analysisResult.speaker_count = updates.speaker_count;
+      }
+      
+      if (updates.speakers) {
+        analysisResult.speakers = updates.speakers;
+      }
+      
+      if (updates.status) {
+        analysisResult.status = updates.status;
       }
       
       // Always set analysis_result to preserve existing data
@@ -870,5 +887,5 @@ export const db = {
   }
 };
 
-// Export the Supabase client for direct access if needed
-export { supabase };
+// Export the fresh client function for direct access if needed
+export { createFreshSupabaseClient };

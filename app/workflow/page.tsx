@@ -564,6 +564,36 @@ export default function WorkflowPage() {
   const [forceRender, setForceRender] = useState(0);
   const [caseInformation, setCaseInformation] = useState<any>(null);
   const [savedDocumentsRefresh, setSavedDocumentsRefresh] = useState(0);
+  const [isRestoringState, setIsRestoringState] = useState(false);
+  const [showRestoreSuccess, setShowRestoreSuccess] = useState(false);
+
+  // Function to clear all workflow state
+  const clearWorkflowState = () => {
+    localStorage.removeItem('workflow_case_id');
+    localStorage.removeItem('workflow_file_data');
+    localStorage.removeItem('workflow_completed_steps');
+    localStorage.removeItem('workflow_current_step');
+    localStorage.removeItem('workflow_case_information');
+    localStorage.removeItem('workflow_justice_analysis');
+    localStorage.removeItem('workflow_document_summaries');
+    localStorage.removeItem('workflow_brief_section_chats');
+    localStorage.removeItem('workflow_chat_inputs');
+    localStorage.removeItem('workflow_selected_documents');
+    
+    // Reset all state
+    setCurrentCaseId(null);
+    setUploadedFileData(null);
+    setCompletedSteps([]);
+    setCurrentStep(1);
+    setCaseInformation(null);
+    setJusticeAnalysis(null);
+    setDocumentSummaries([]);
+    setBriefSectionChats({});
+    setChatInputs({});
+    setSelectedDocuments([]);
+    
+    console.log('🧹 Cleared all workflow state');
+  };
 
   // Always load case information from database when caseId is available
   useEffect(() => {
@@ -586,6 +616,7 @@ export default function WorkflowPage() {
   useEffect(() => {
     const loadWorkflowData = async () => {
       try {
+        setIsRestoringState(true);
         // Check localStorage for existing workflow session
         const savedCaseId = localStorage.getItem('workflow_case_id');
         const savedFileData = localStorage.getItem('workflow_file_data');
@@ -638,6 +669,74 @@ export default function WorkflowPage() {
           console.log('📂 Restored current step:', step);
         }
 
+        // Restore additional state from localStorage
+        const savedCaseInformation = localStorage.getItem('workflow_case_information');
+        const savedJusticeAnalysis = localStorage.getItem('workflow_justice_analysis');
+        const savedDocumentSummaries = localStorage.getItem('workflow_document_summaries');
+        const savedBriefSectionChats = localStorage.getItem('workflow_brief_section_chats');
+        const savedChatInputs = localStorage.getItem('workflow_chat_inputs');
+        const savedSelectedDocuments = localStorage.getItem('workflow_selected_documents');
+
+        if (savedCaseInformation) {
+          try {
+            const caseInfo = JSON.parse(savedCaseInformation);
+            setCaseInformation(caseInfo);
+            console.log('📋 Restored case information from localStorage');
+          } catch (e) {
+            console.error('Error parsing saved case information:', e);
+          }
+        }
+
+        if (savedJusticeAnalysis) {
+          try {
+            const justiceData = JSON.parse(savedJusticeAnalysis);
+            setJusticeAnalysis(justiceData);
+            console.log('⚖️ Restored justice analysis from localStorage');
+          } catch (e) {
+            console.error('Error parsing saved justice analysis:', e);
+          }
+        }
+
+        if (savedDocumentSummaries) {
+          try {
+            const summaries = JSON.parse(savedDocumentSummaries);
+            setDocumentSummaries(summaries);
+            console.log('📚 Restored document summaries from localStorage');
+          } catch (e) {
+            console.error('Error parsing saved document summaries:', e);
+          }
+        }
+
+        if (savedBriefSectionChats) {
+          try {
+            const chats = JSON.parse(savedBriefSectionChats);
+            setBriefSectionChats(chats);
+            console.log('💬 Restored brief section chats from localStorage');
+          } catch (e) {
+            console.error('Error parsing saved brief section chats:', e);
+          }
+        }
+
+        if (savedChatInputs) {
+          try {
+            const inputs = JSON.parse(savedChatInputs);
+            setChatInputs(inputs);
+            console.log('⌨️ Restored chat inputs from localStorage');
+          } catch (e) {
+            console.error('Error parsing saved chat inputs:', e);
+          }
+        }
+
+        if (savedSelectedDocuments) {
+          try {
+            const docs = JSON.parse(savedSelectedDocuments);
+            setSelectedDocuments(docs);
+            console.log('📄 Restored selected documents from localStorage');
+          } catch (e) {
+            console.error('Error parsing saved selected documents:', e);
+          }
+        }
+
         // If we have a case ID, try to load recent transcriptions AND case information
         if (savedCaseId && savedCaseId !== 'null' && savedCaseId !== 'undefined') {
           console.log('🔍 Attempting to load recent transcriptions for case:', savedCaseId);
@@ -661,6 +760,17 @@ export default function WorkflowPage() {
         console.error('Error loading workflow data:', error);
       } finally {
         setIsLoading(false);
+        setIsRestoringState(false);
+        
+        // Show success message if we restored any data
+        const hasRestoredData = localStorage.getItem('workflow_case_id') || 
+                               localStorage.getItem('workflow_file_data') || 
+                               localStorage.getItem('workflow_completed_steps');
+        
+        if (hasRestoredData) {
+          setShowRestoreSuccess(true);
+          setTimeout(() => setShowRestoreSuccess(false), 3000);
+        }
       }
     };
 
@@ -687,6 +797,48 @@ export default function WorkflowPage() {
   useEffect(() => {
     localStorage.setItem('workflow_current_step', currentStep.toString());
   }, [currentStep]);
+
+  // Save case information to localStorage
+  useEffect(() => {
+    if (caseInformation) {
+      localStorage.setItem('workflow_case_information', JSON.stringify(caseInformation));
+    }
+  }, [caseInformation]);
+
+  // Save justice analysis to localStorage
+  useEffect(() => {
+    if (justiceAnalysis) {
+      localStorage.setItem('workflow_justice_analysis', JSON.stringify(justiceAnalysis));
+    }
+  }, [justiceAnalysis]);
+
+  // Save document summaries to localStorage
+  useEffect(() => {
+    if (documentSummaries.length > 0) {
+      localStorage.setItem('workflow_document_summaries', JSON.stringify(documentSummaries));
+    }
+  }, [documentSummaries]);
+
+  // Save brief section chats to localStorage
+  useEffect(() => {
+    if (Object.keys(briefSectionChats).length > 0) {
+      localStorage.setItem('workflow_brief_section_chats', JSON.stringify(briefSectionChats));
+    }
+  }, [briefSectionChats]);
+
+  // Save chat inputs to localStorage
+  useEffect(() => {
+    if (Object.keys(chatInputs).length > 0) {
+      localStorage.setItem('workflow_chat_inputs', JSON.stringify(chatInputs));
+    }
+  }, [chatInputs]);
+
+  // Save selected documents to localStorage
+  useEffect(() => {
+    if (selectedDocuments.length > 0) {
+      localStorage.setItem('workflow_selected_documents', JSON.stringify(selectedDocuments));
+    }
+  }, [selectedDocuments]);
 
   // Load recent transcriptions for a case
   const loadRecentTranscriptions = async (caseId: string) => {
@@ -1619,7 +1771,14 @@ export default function WorkflowPage() {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading workflow data...</p>
+          <p className="text-gray-600">
+            {isRestoringState ? 'Restoring your previous session...' : 'Loading workflow data...'}
+          </p>
+          {isRestoringState && (
+            <p className="text-sm text-gray-500 mt-2">
+              Your progress and data will be restored
+            </p>
+          )}
         </div>
       </div>
     );
@@ -1627,6 +1786,14 @@ export default function WorkflowPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
+      {/* Success Message */}
+      {showRestoreSuccess && (
+        <div className="fixed top-4 right-4 z-50 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center space-x-2">
+          <CheckCircle className="w-5 h-5" />
+          <span>Session restored successfully! Your progress has been saved.</span>
+        </div>
+      )}
+      
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1642,7 +1809,8 @@ export default function WorkflowPage() {
               {(uploadedFileData || currentCaseId) && (
                 <button
                   onClick={() => {
-                    if (confirm('Clear all workflow data and start fresh?')) {
+                    if (confirm('Clear all workflow data and start fresh? This will remove all saved progress.')) {
+                      clearWorkflowState();
                       localStorage.clear();
                       window.location.reload();
                     }

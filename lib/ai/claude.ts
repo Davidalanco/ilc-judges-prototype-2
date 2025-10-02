@@ -5,8 +5,10 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-key-for-build',
 });
 
-// Export the Claude client
+// Export the Claude client with multiple names for compatibility
 export { anthropic };
+export const claudeClient = anthropic;
+export const claude = anthropic;
 
 // Analyze Supreme Court justices for a specific case using Claude
 export async function analyzeJusticesWithClaude(caseData: any, transcription: string, documentContext: string) {

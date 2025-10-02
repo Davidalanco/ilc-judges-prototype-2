@@ -14,9 +14,12 @@ export async function POST(request: NextRequest) {
 
     console.log('💾 Storing case and transcription...');
 
+    // First, create or get a user
+    let userId = 'dba7a583-3b19-47bd-92eb-d2c91cf3fcd7'; // Use the test user we created
+    
     // First, create the case using existing db function
     const caseResult = await db.createCase({
-      user_id: 'temp-user-id', // TODO: Get actual user ID from session
+      user_id: userId,
       case_name: caseInfo.caseName || 'Untitled Case',
       case_type: 'Supreme Court Amicus Brief',
       court_level: caseInfo.courtLevel || 'U.S. Supreme Court',
@@ -41,7 +44,7 @@ export async function POST(request: NextRequest) {
       duration_seconds: transcriptionData.duration === 'Unknown' 
         ? undefined 
         : parseInt(transcriptionData.duration?.replace(/[^\d]/g, '') || '0'),
-      user_id: 'temp-user-id' // TODO: Get actual user ID from session
+      user_id: userId
     });
 
     console.log('✅ Conversation created:', conversationResult.id);

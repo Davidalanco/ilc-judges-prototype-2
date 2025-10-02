@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.65.0",
     "@aws-sdk/client-s3": "^3.899.0",
     "@elevenlabs/elevenlabs-js": "^2.16.0",
+    "@google/generative-ai": "^0.24.1",
     "@supabase/storage-js": "^2.10.2",
     "@supabase/supabase-js": "^2.58.0",
     "@types/pdf-parse": "^1.1.5",
@@ -35,6 +36,7 @@
     "eslint": "^8.56.0",
     "eslint-config-next": "^15.5.4",
     "postcss": "^8.4.32",
+    "puppeteer": "^24.23.0",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.9.2"
   }

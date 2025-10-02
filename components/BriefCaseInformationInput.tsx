@@ -9,7 +9,7 @@ interface BriefCaseInformationInputProps {
   onCaseInfoChange: (caseInfo: any) => void;
   initialData?: any;
   onSubmit?: () => void;
-  onProceedToBrief?: () => void;
+  onProceedToBrief?: (caseInfo: any) => void;
 }
 
 interface TranscriptionData {
@@ -82,25 +82,30 @@ export function BriefCaseInformationInput({ onCaseInfoChange, initialData, onSub
   const extractCaseInfoWithAI = async (transcription: string): Promise<Partial<typeof caseInfo>> => {
     console.log('🤖 Using AI to analyze transcription...');
     
-    const response = await fetch('/api/ai/analyze-transcription', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        transcription: transcription
-      }),
-    });
+    try {
+      const response = await fetch('/api/ai/analyze-transcription', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          transcription: transcription
+        }),
+      });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(`AI analysis failed: ${errorData.error || 'Unknown error'}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`AI analysis failed: ${errorData.error || 'Unknown error'}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ AI analysis complete:', result);
+      
+      return result.extractedInfo || {};
+    } catch (error) {
+      console.error('❌ Error in extractCaseInfoWithAI:', error);
+      throw error;
     }
-
-    const result = await response.json();
-    console.log('✅ AI analysis complete:', result);
-    
-    return result.extractedInfo || {};
   };
 
   const storeCaseAndTranscription = async (extractedInfo: Partial<typeof caseInfo>, transcriptionData: TranscriptionData) => {
@@ -632,7 +637,7 @@ export function BriefCaseInformationInput({ onCaseInfoChange, initialData, onSub
                   </div>
                 )}
                 <button
-                  onClick={onProceedToBrief}
+                  onClick={() => onProceedToBrief?.(caseInfo)}
                   className="flex items-center space-x-2 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
                 >
                   <span>Proceed to Brief Writing</span>

@@ -11,7 +11,7 @@ export default function AIBriefLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="h-screen bg-gray-50 overflow-hidden">
+    <div className="min-h-screen bg-gray-50">
       {children}
     </div>
   );

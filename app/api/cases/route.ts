@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { db, supabase } from '@/lib/db';
 import '@/types/auth';
 
 export async function POST(request: NextRequest) {
   try {
-    // Temporary bypass authentication for development
-    // const session = await getServerSession();
-    // if (!session?.user?.id) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    // }
-    console.log('📝 POST /api/cases - bypassing auth for development');
+    // Check authentication
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     const body = await request.json();
     const {
@@ -31,10 +31,10 @@ export async function POST(request: NextRequest) {
 
     // Create the case
     const newCase = await db.createCase({
-      user_id: '00000000-0000-0000-0000-000000000001', // Temporary fixed user ID for development
+      user_id: session.user.id,
+      title: case_name, // Required field
       case_name,
       case_type,
-      court_level,
       constitutional_question,
       client_type,
       jurisdiction,
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
         .from('file_uploads')
         .select('*')
         .eq('id', uploadId)
-        .eq('user_id', '00000000-0000-0000-0000-000000000001');
+        .eq('user_id', session.user.id);
 
       if (!uploadError && uploads && uploads.length > 0) {
         const upload = uploads[0];
@@ -91,12 +91,11 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    // Temporary bypass authentication for development
-    // const session = await getServerSession();
-    // if (!session?.user?.id) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    // }
-    console.log('🔄 PUT /api/cases - bypassing auth for development');
+    // Check authentication
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     const url = new URL(request.url);
     const caseId = url.searchParams.get('id');
@@ -108,14 +107,27 @@ export async function PUT(request: NextRequest) {
     const updates = await request.json();
     console.log('💾 Updating case:', caseId, 'with data:', updates);
 
+    // Map court_level to case_type for database storage (same logic as PATCH endpoint)
+    const dbUpdates = { ...updates };
+    if (updates.court_level !== undefined) {
+      dbUpdates.case_type = updates.court_level;
+      delete dbUpdates.court_level; // Remove so it doesn't cause errors
+    }
+
     // Update the case
-    const updatedCase = await db.updateCase(caseId, updates);
+    const updatedCase = await db.updateCase(caseId, dbUpdates);
     
     console.log('✅ Case updated successfully:', updatedCase.case_name);
 
+    // Map case_type back to court_level for response (same logic as PATCH endpoint)
+    const mappedUpdatedCase = {
+      ...updatedCase,
+      court_level: updatedCase.case_type || ''
+    };
+
     return NextResponse.json({
       success: true,
-      case: updatedCase,
+      case: mappedUpdatedCase,
       message: 'Case updated successfully'
     });
 
@@ -133,15 +145,14 @@ export async function PUT(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    // Temporary bypass authentication for development 
-    // const session = await getServerSession();
-    // if (!session?.user?.id) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    // }
-    console.log('📋 GET /api/cases - bypassing auth for development');
+    // Check authentication
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-    // Get all cases for the development user (use same user ID as in transcribe-direct)
-    const cases = await db.getCasesByUserId('37dc83ba-123b-4c86-9c61-903c085193a0');
+    // Get all cases for the authenticated user
+    const cases = await db.getCasesByUserId(session.user.id);
 
     // Get conversation counts for each case and map field names
     const casesWithCounts = await Promise.all(
@@ -149,9 +160,10 @@ export async function GET(request: NextRequest) {
         const conversations = await db.getConversationsByCase(caseItem.id);
         return {
           ...caseItem,
-          case_name: caseItem.title, // Map title to case_name for frontend
-          constitutional_question: caseItem.description, // Map description to constitutional_question
-          status: caseItem.case_status, // Map case_status to status
+          case_name: caseItem.case_name || caseItem.title, // Use AI-extracted case_name, fallback to title
+          constitutional_question: caseItem.constitutional_question || caseItem.description, // Use AI-extracted constitutional_question, fallback to description
+          court_level: caseItem.case_type || '', // Map case_type to court_level for frontend
+          status: caseItem.status || 'draft', // Use status field
           conversation_count: conversations.length,
           has_audio: conversations.length > 0
         };
@@ -174,8 +186,11 @@ export async function GET(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    // Temporary bypass authentication for development
-    console.log('🗑️ DELETE /api/cases - bypassing auth for development');
+    // Check authentication
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     const { searchParams } = new URL(request.url);
     const caseId = searchParams.get('id');

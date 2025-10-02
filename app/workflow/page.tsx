@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import { 
   Upload, 
   FileText, 
@@ -32,7 +34,8 @@ import {
   Database,
   ChevronUp,
   Clock,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react';
 import FileUpload from '@/app/components/FileUpload';
 import CitationResearch from '@/app/components/CitationResearch';
@@ -41,6 +44,7 @@ import DebugLogPanel, { debugLog } from '@/app/components/DebugLogPanel';
 import CaseInformationInput from '@/app/components/CaseInformationInput';
 import WorkflowStep1 from '@/app/components/WorkflowStep1';
 import SpeakerTranscriptDisplay from '@/app/components/SpeakerTranscriptDisplay';
+import BriefDraftingArea from '@/app/components/BriefDraftingArea';
 
 // Component for managing open cases
 interface OpenCasesManagerProps {
@@ -49,16 +53,23 @@ interface OpenCasesManagerProps {
 }
 
 function OpenCasesManager({ currentCaseId, onCaseSelect }: OpenCasesManagerProps) {
+  const { data: session, status } = useSession();
   const [cases, setCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCases, setSelectedCases] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Load cases on component mount
+  // Load cases only when authenticated
   useEffect(() => {
-    loadCases();
-  }, []);
+    if (status === 'loading') return; // Wait for session to load
+    if (status === 'authenticated' && session) {
+      loadCases();
+    } else if (status === 'unauthenticated') {
+      setLoading(false);
+      setError('Please sign in to view cases');
+    }
+  }, [status, session]);
 
   const loadCases = async () => {
     try {
@@ -543,6 +554,22 @@ function OpenCasesManager({ currentCaseId, onCaseSelect }: OpenCasesManagerProps
 }
 
 export default function WorkflowPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
+  // Authentication check
+  useEffect(() => {
+    if (status === 'loading') return; // Still loading
+    
+    if (status === 'unauthenticated') {
+      console.log('🔒 User not authenticated, redirecting to sign in');
+      router.push('/auth/signin');
+      return;
+    }
+    
+    console.log('✅ User authenticated:', session?.user?.email);
+  }, [status, session, router]);
+
   // Initialize debug logging
   React.useEffect(() => {
     debugLog.info('Workflow', 'Supreme Court Brief Workflow loaded');
@@ -566,6 +593,14 @@ export default function WorkflowPage() {
   const [savedDocumentsRefresh, setSavedDocumentsRefresh] = useState(0);
   const [isRestoringState, setIsRestoringState] = useState(false);
   const [showRestoreSuccess, setShowRestoreSuccess] = useState(false);
+  const [historicalResearch, setHistoricalResearch] = useState<any>(null);
+  const [isLoadingHistoricalResearch, setIsLoadingHistoricalResearch] = useState(false);
+  const [hiddenDocuments, setHiddenDocuments] = useState<Set<string>>(new Set());
+  const [referenceBrief, setReferenceBrief] = useState<any>(null);
+  const [documentFeedback, setDocumentFeedback] = useState<{[key: string]: 'relevant' | 'not_relevant'}>({});
+  const [previewDocument, setPreviewDocument] = useState<any>(null);
+  const [documentAnalysis, setDocumentAnalysis] = useState<any>(null);
+  const [isLoadingDocumentAnalysis, setIsLoadingDocumentAnalysis] = useState(false);
 
   // Function to clear all workflow state
   const clearWorkflowState = () => {
@@ -1009,6 +1044,10 @@ export default function WorkflowPage() {
             
             // Also load case information from database
             loadCaseInformation(caseId);
+            // Load existing historical research if available
+            loadExistingHistoricalResearch(caseId);
+            // Load existing brief references if available
+            loadExistingBriefReferences(caseId);
           } else {
             // If no localStorage data, check database for existing transcriptions
             console.log('🔍 Checking database for existing transcriptions for case:', caseId);
@@ -1054,6 +1093,10 @@ export default function WorkflowPage() {
                   
                   // Also load case information from database
                   loadCaseInformation(caseId);
+                  // Load existing historical research if available
+                  loadExistingHistoricalResearch(caseId);
+                  // Load existing brief references if available
+                  loadExistingBriefReferences(caseId);
                 } else {
                   debugLog.info('Workflow', `No transcriptions found for case: ${caseId} - will show upload screen`);
                   console.log('📭 No transcriptions found in database for case:', caseId);
@@ -1703,6 +1746,291 @@ export default function WorkflowPage() {
     return false;
   };
 
+  // Function to load existing historical research
+  const loadExistingHistoricalResearch = async (caseId: string) => {
+    try {
+      console.log('🏛️ Loading existing historical research for case:', caseId);
+      const response = await fetch(`/api/cases/${caseId}/research-results`, {
+        method: 'GET'
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const historicalResults = result.researchResults?.find((r: any) => r.result_type === 'historical_research');
+        if (historicalResults?.results) {
+          setHistoricalResearch(historicalResults.results);
+          console.log('✅ Loaded existing historical research');
+          return true;
+        }
+      }
+    } catch (error) {
+      console.log('ℹ️ No existing historical research found');
+    }
+    return false;
+  };
+
+  // Function to load existing brief references
+  const loadExistingBriefReferences = async (caseId: string) => {
+    try {
+      console.log('📄 Loading existing brief references for case:', caseId);
+      const response = await fetch(`/api/cases/${caseId}/brief-references`, {
+        method: 'GET'
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.briefReferences && result.briefReferences.length > 0) {
+          // Convert the saved brief references back to the format expected by BriefDraftingArea
+          const briefReferences = result.briefReferences.map((ref: any) => ({
+            id: ref.id,
+            fileName: ref.case_title,
+            content: ref.legal_issues?.[0]?.content || '', // Get first section content
+            structure: ref.legal_issues || [], // Sections were saved in legal_issues field
+            metadata: {
+              ...ref.parties, // Metadata was saved in parties field
+              uploadedAt: ref.created_at
+            }
+          }));
+          
+          // Set the first brief reference as the reference brief
+          if (briefReferences.length > 0) {
+            setReferenceBrief(briefReferences[0]);
+            console.log(`✅ Loaded ${briefReferences.length} existing brief reference(s)`);
+            return true;
+          }
+        }
+      }
+    } catch (error) {
+      console.log('ℹ️ No existing brief references found');
+    }
+    return false;
+  };
+
+  // Function to conduct historical research
+  const conductHistoricalResearch = async () => {
+    if (!caseInformation) {
+      console.error('No case information available for historical research');
+      return;
+    }
+
+    setIsLoadingHistoricalResearch(true);
+    
+    try {
+      console.log('🏛️ Starting comprehensive historical research across all constitutional principles');
+      console.log('📋 Case information available:', caseInformation);
+      console.log('📄 Uploaded file data available:', uploadedFileData);
+      console.log('📄 Selected documents available:', selectedDocuments);
+      console.log('📄 Document summaries available:', documentSummaries);
+      
+      // Build comprehensive context including everything available
+      let fullContext = `CASE INFORMATION:
+Case: ${caseInformation.caseName || caseInformation.case_name || 'Unknown Case'}
+Court Level: ${caseInformation.courtLevel || caseInformation.court_level || 'Unknown Court'}
+Constitutional Question: ${caseInformation.constitutionalQuestion || caseInformation.constitutional_question || 'Constitutional analysis required'}
+Penalties: ${caseInformation.penalties || 'None specified'}
+Target Precedents: ${caseInformation.targetPrecedent || caseInformation.precedent_target || 'None specified'}`;
+
+      // Add complete transcription if available
+      if (uploadedFileData?.transcription) {
+        fullContext += `\n\nFULL ATTORNEY STRATEGY DISCUSSION TRANSCRIPT:
+${uploadedFileData.transcription}`;
+      }
+
+      // Add uploaded documents and summaries
+      if (selectedDocuments && selectedDocuments.length > 0) {
+        fullContext += `\n\nUPLOADED LEGAL DOCUMENTS:`;
+        selectedDocuments.forEach((doc, index) => {
+          fullContext += `\n\n--- Document ${index + 1}: ${doc.title || doc.case_name || 'Legal Document'} ---`;
+          if (doc.content || doc.full_text) {
+            fullContext += `\n${doc.content || doc.full_text}`;
+          }
+        });
+      }
+
+      // Add AI-generated document summaries
+      if (documentSummaries && documentSummaries.length > 0) {
+        fullContext += `\n\nAI-GENERATED DOCUMENT SUMMARIES:`;
+        documentSummaries.forEach((summary, index) => {
+          fullContext += `\n\n--- Summary ${index + 1} ---\n${summary}`;
+        });
+      }
+
+      // Add justice analysis if available
+      if (justiceAnalysis) {
+        fullContext += `\n\nJUSTICE PSYCHOLOGY ANALYSIS:
+${JSON.stringify(justiceAnalysis, null, 2)}`;
+      }
+
+      // Add feedback about previously irrelevant documents
+      const irrelevantDocuments = Object.entries(documentFeedback)
+        .filter(([_, feedback]) => feedback === 'not_relevant')
+        .map(([docId, _]) => {
+          // Extract document title from docId
+          const parts = docId.split('-');
+          return parts.slice(2).join('-'); // Remove category and index
+        });
+
+      if (irrelevantDocuments.length > 0) {
+        fullContext += `\n\nPREVIOUSLY MARKED AS NOT RELEVANT (DO NOT SUGGEST THESE AGAIN):
+${irrelevantDocuments.map(title => `- ${title}`).join('\n')}`;
+      }
+
+      console.log('📝 Sending comprehensive context to Claude (length: ' + fullContext.length + ' chars)');
+      console.log('📋 Context breakdown:');
+      console.log('  - Case info length:', `${caseInformation.caseName} - ${caseInformation.constitutionalQuestion}`.length);
+      console.log('  - Transcript length:', uploadedFileData?.transcription?.length || 0);
+      console.log('  - Documents count:', selectedDocuments?.length || 0);
+      console.log('  - Summaries count:', documentSummaries?.length || 0);
+      console.log('  - Justice analysis length:', justiceAnalysis ? JSON.stringify(justiceAnalysis).length : 0);
+      
+      if (irrelevantDocuments.length > 0) {
+        console.log('🚫 Excluding previously marked irrelevant documents:', irrelevantDocuments);
+      }
+      
+      const response = await fetch('/api/legal/historical-research', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          caseContext: fullContext,
+          legalIssues: caseInformation.legalIssues || caseInformation.legal_issues || caseInformation.constitutionalQuestion || caseInformation.constitutional_question || 'Constitutional analysis required',
+          excludeDocuments: irrelevantDocuments,
+          caseId: currentCaseId
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Historical research failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      setHistoricalResearch(result.research);
+      
+      console.log('✅ Historical research completed:', result.metadata);
+      debugLog.info('Historical Research', `Found ${result.metadata.totalDocuments} historical documents with ${result.metadata.averageRelevance}% average relevance`);
+      
+    } catch (error) {
+      console.error('Historical research error:', error);
+      debugLog.error('Historical Research', error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      setIsLoadingHistoricalResearch(false);
+    }
+  };
+
+  // Function to handle document relevance feedback
+  const handleDocumentFeedback = async (documentId: string, feedback: 'relevant' | 'not_relevant', documentTitle: string) => {
+    try {
+      // Update local state immediately
+      setDocumentFeedback(prev => ({
+        ...prev,
+        [documentId]: feedback
+      }));
+
+      if (feedback === 'not_relevant') {
+        // Hide the document from view
+        setHiddenDocuments(prev => new Set([...prev, documentId]));
+        console.log(`📋 Document marked as not relevant and hidden: ${documentTitle}`);
+      }
+
+      // Send feedback to API for learning
+      await fetch('/api/legal/historical-research/feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          documentId,
+          documentTitle,
+          feedback,
+          caseId: currentCaseId,
+          caseContext: caseInformation ? `${caseInformation.caseName} - ${caseInformation.constitutionalQuestion}` : 'Unknown case'
+        }),
+      });
+
+      debugLog.info('Document Feedback', `Marked "${documentTitle}" as ${feedback}`);
+    } catch (error) {
+      console.error('Error submitting document feedback:', error);
+    }
+  };
+
+  // Function to show all documents again
+  const showAllDocuments = () => {
+    setHiddenDocuments(new Set());
+    setDocumentFeedback({});
+    console.log('📋 Showing all documents again');
+  };
+
+  // Function to perform deep document analysis
+  const performDeepDocumentAnalysis = async (document: any) => {
+    if (!document) return;
+
+    try {
+      setIsLoadingDocumentAnalysis(true);
+      setDocumentAnalysis(null);
+      
+      console.log(`🔍 Starting deep AI analysis for: ${document.title}`);
+      debugLog.info('Document Analysis', `Analyzing "${document.title}"`);
+
+      // Build comprehensive context for analysis
+      let fullContext = `CASE INFORMATION:
+Case: ${caseInformation?.caseName || caseInformation?.case_name || 'Unknown Case'}
+Court Level: ${caseInformation?.courtLevel || caseInformation?.court_level || 'Unknown Court'}
+Constitutional Question: ${caseInformation?.constitutionalQuestion || caseInformation?.constitutional_question || 'Constitutional analysis required'}
+Penalties: ${caseInformation?.penalties || 'None specified'}
+Target Precedents: ${caseInformation?.targetPrecedent || caseInformation?.precedent_target || 'None specified'}`;
+
+      if (uploadedFileData?.transcription) {
+        fullContext += `\n\nFULL ATTORNEY STRATEGY DISCUSSION TRANSCRIPT:
+${uploadedFileData.transcription}`;
+      }
+
+      if (selectedDocuments && selectedDocuments.length > 0) {
+        fullContext += `\n\nUPLOADED DOCUMENTS:
+${selectedDocuments.map((doc, index) => `Document ${index + 1}: ${doc.name}`).join('\n')}`;
+      }
+
+      if (documentSummaries && documentSummaries.length > 0) {
+        fullContext += `\n\nDOCUMENT SUMMARIES:`;
+        documentSummaries.forEach((summary, index) => {
+          fullContext += `\n\n--- Summary ${index + 1} ---\n${summary}`;
+        });
+      }
+
+      const response = await fetch('/api/legal/analyze-document', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          document: document,
+          caseContext: fullContext,
+          justiceAnalysis: justiceAnalysis
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Document analysis failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      setDocumentAnalysis(result.analysis);
+      
+      console.log(`✅ Deep analysis completed for: ${document.title}`);
+      debugLog.info('Document Analysis', `Completed analysis for "${document.title}"`);
+
+    } catch (error) {
+      console.error('Document analysis error:', error);
+      debugLog.error('Document Analysis', error instanceof Error ? error.message : 'Unknown error');
+      setDocumentAnalysis({
+        error: 'Failed to analyze document',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    } finally {
+      setIsLoadingDocumentAnalysis(false);
+    }
+  };
+
   // Function to analyze justices with AI
   const analyzeJusticesWithAI = async () => {
     if (!currentCaseId) {
@@ -1766,6 +2094,19 @@ export default function WorkflowPage() {
   };
 
   // Show loading state while data is being restored
+  // Show loading while checking authentication
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading while fetching workflow data
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center">
@@ -2240,6 +2581,7 @@ export default function WorkflowPage() {
                               {/* Citation Research Component */}
                               <div className="space-y-4">
                                 <CitationResearch
+                                  caseId={currentCaseId}
                                   onDocumentsSelected={setSelectedDocuments}
                                   onSummariesGenerated={setDocumentSummaries}
                                   onDocumentSaved={(doc) => {
@@ -2253,7 +2595,7 @@ export default function WorkflowPage() {
                                   <h3 className="text-lg font-semibold text-gray-900 mb-4">📂 Saved Research Documents</h3>
                                   <SavedDocuments 
                                     caseId={currentCaseId || '0ff75224-0d61-497d-ac1b-ffefdb63dba1'}
-                                    userId={'a2871219-533b-485e-9ac6-effcda36a88d'}
+                                    userId={'017e743d-d079-4a79-a842-54e93d6b64e5'}
                                     key={currentCaseId} // Force re-render when case ID changes
                                     refreshTrigger={savedDocumentsRefresh} // Trigger refresh on document save
                                   />
@@ -2452,8 +2794,324 @@ export default function WorkflowPage() {
                             </div>
                           )}
 
+                          {/* Historical Context Research */}
+                          {step.id === 6 && (
+                            <div className="space-y-6">
+                              {/* Historical Research Step */}
+                              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                                <h3 className="text-lg font-semibold text-indigo-900 mb-2">🏛️ Comprehensive Historical Research</h3>
+                                <p className="text-indigo-700 text-sm mb-4">
+                                  Claude analyzes your case to find ALL extremely relevant historical documents, founding-era precedents, 
+                                  and colonial examples that support your legal arguments across every applicable constitutional principle.
+                                </p>
+                                
+                                {!historicalResearch && !isLoadingHistoricalResearch && (
+                                  <div className="mt-4">
+                                    <button
+                                      onClick={() => conductHistoricalResearch()}
+                                      className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center"
+                                    >
+                                      <Search className="w-4 h-4 mr-2" />
+                                      Find All Relevant Historical Documents
+                                    </button>
+                                  </div>
+                                )}
+                                
+                                {isLoadingHistoricalResearch && (
+                                  <div className="mt-4 flex items-center text-indigo-700">
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-700 mr-2"></div>
+                                    Claude is researching historical documents...
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Historical Research Results */}
+                              {historicalResearch && (
+                                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                                  <h4 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
+                                    <BookOpen className="w-6 h-6 text-indigo-600 mr-2" />
+                                    Historical Documents Found
+                                    <span className="ml-2 px-2 py-1 bg-indigo-100 text-indigo-800 text-xs rounded-full">
+                                      All Constitutional Principles
+                                    </span>
+                                  </h4>
+
+                                  {/* Founding Documents */}
+                                  {historicalResearch.foundingDocuments && historicalResearch.foundingDocuments.length > 0 && (
+                                    <div className="mb-6">
+                                      <h5 className="text-lg font-semibold text-blue-800 mb-3 flex items-center">
+                                        <BookOpen className="w-5 h-5 mr-2" />
+                                        Founding Documents
+                                      </h5>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        {historicalResearch.foundingDocuments.map((doc: any, idx: number) => {
+                                          const docId = `founding-${idx}-${doc.title}`;
+                                          const isHidden = hiddenDocuments.has(docId);
+                                          const feedback = documentFeedback[docId];
+                                          
+                                          if (isHidden) return null;
+                                          
+                                          return (
+                                            <div key={idx} className={`flex items-start space-x-3 p-3 rounded-lg border transition-all ${
+                                              feedback === 'relevant' ? 'bg-green-50 border-green-300' : 
+                                              feedback === 'not_relevant' ? 'bg-red-50 border-red-300' : 
+                                              'bg-blue-50 border-blue-200'
+                                            }`}>
+                                              <BookOpen className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center justify-between mb-1">
+                                                  <h6 className="font-medium text-blue-900 text-sm truncate">{doc.title}</h6>
+                                                  <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded ml-2 flex-shrink-0">{doc.relevanceScore}% Applicable</span>
+                                                </div>
+                                                <p className="text-xs text-blue-700 mb-2 line-clamp-2">{doc.significance}</p>
+                                                <div className="flex justify-between items-center mb-2">
+                                                  <span className="text-xs text-blue-600">{doc.archiveLocation}</span>
+                                                  <button
+                                                    onClick={() => setPreviewDocument(doc)}
+                                                    className="text-blue-600 hover:text-blue-800 text-xs underline"
+                                                  >
+                                                    View Full Text
+                                                  </button>
+                                                </div>
+                                                {/* Relevance Feedback Buttons */}
+                                                {!feedback && (
+                                                  <div className="flex space-x-2 mt-2">
+                                                    <button
+                                                      onClick={() => handleDocumentFeedback(docId, 'relevant', doc.title)}
+                                                      className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition-colors"
+                                                    >
+                                                      ✓ Relevant
+                                                    </button>
+                                                    <button
+                                                      onClick={() => handleDocumentFeedback(docId, 'not_relevant', doc.title)}
+                                                      className="text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition-colors"
+                                                    >
+                                                      ✗ Not Relevant
+                                                    </button>
+                                                  </div>
+                                                )}
+                                                {feedback === 'relevant' && (
+                                                  <div className="text-xs text-green-700 mt-2 flex items-center">
+                                                    <span className="font-medium">✓ Marked as relevant</span>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Historical Cases */}
+                                  {historicalResearch.historicalCases && historicalResearch.historicalCases.length > 0 && (
+                                    <div className="mb-6">
+                                      <h5 className="text-lg font-semibold text-purple-800 mb-3 flex items-center">
+                                        <Gavel className="w-5 h-5 mr-2" />
+                                        Historical Precedents
+                                      </h5>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        {historicalResearch.historicalCases.map((case_: any, idx: number) => {
+                                          const docId = `cases-${idx}-${case_.title}`;
+                                          const isHidden = hiddenDocuments.has(docId);
+                                          const feedback = documentFeedback[docId];
+                                          
+                                          if (isHidden) return null;
+                                          
+                                          return (
+                                            <div key={idx} className={`flex items-start space-x-3 p-3 rounded-lg border transition-all ${
+                                              feedback === 'relevant' ? 'bg-green-50 border-green-300' : 
+                                              feedback === 'not_relevant' ? 'bg-red-50 border-red-300' : 
+                                              'bg-purple-50 border-purple-200'
+                                            }`}>
+                                              <Gavel className="w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0" />
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center justify-between mb-1">
+                                                  <h6 className="font-medium text-purple-900 text-sm truncate">{case_.title}</h6>
+                                                  <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded ml-2 flex-shrink-0">{case_.relevanceScore}% Applicable</span>
+                                                </div>
+                                                <p className="text-xs text-purple-700 mb-2 line-clamp-2">{case_.significance}</p>
+                                                <div className="flex justify-between items-center mb-2">
+                                                  <span className="text-xs text-purple-600">{case_.caseContext}</span>
+                                                  <button
+                                                    onClick={() => setPreviewDocument(case_)}
+                                                    className="text-purple-600 hover:text-purple-800 text-xs underline"
+                                                  >
+                                                    View Opinion
+                                                  </button>
+                                                </div>
+                                                {/* Relevance Feedback Buttons */}
+                                                {!feedback && (
+                                                  <div className="flex space-x-2 mt-2">
+                                                    <button
+                                                      onClick={() => handleDocumentFeedback(docId, 'relevant', case_.title)}
+                                                      className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition-colors"
+                                                    >
+                                                      ✓ Relevant
+                                                    </button>
+                                                    <button
+                                                      onClick={() => handleDocumentFeedback(docId, 'not_relevant', case_.title)}
+                                                      className="text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition-colors"
+                                                    >
+                                                      ✗ Not Relevant
+                                                    </button>
+                                                  </div>
+                                                )}
+                                                {feedback === 'relevant' && (
+                                                  <div className="text-xs text-green-700 mt-2 flex items-center">
+                                                    <span className="font-medium">✓ Marked as relevant</span>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Colonial Examples */}
+                                  {historicalResearch.colonialExamples && historicalResearch.colonialExamples.length > 0 && (
+                                    <div className="mb-6">
+                                      <h5 className="text-lg font-semibold text-green-800 mb-3 flex items-center">
+                                        <MessageSquare className="w-5 h-5 mr-2" />
+                                        Colonial & Historical Examples
+                                      </h5>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        {historicalResearch.colonialExamples.map((example: any, idx: number) => {
+                                          const docId = `colonial-${idx}-${example.title}`;
+                                          const isHidden = hiddenDocuments.has(docId);
+                                          const feedback = documentFeedback[docId];
+                                          
+                                          if (isHidden) return null;
+                                          
+                                          return (
+                                            <div key={idx} className={`flex items-start space-x-3 p-3 rounded-lg border transition-all ${
+                                              feedback === 'relevant' ? 'bg-green-100 border-green-400' : 
+                                              feedback === 'not_relevant' ? 'bg-red-50 border-red-300' : 
+                                              'bg-green-50 border-green-200'
+                                            }`}>
+                                              <MessageSquare className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center justify-between mb-1">
+                                                  <h6 className="font-medium text-green-900 text-sm truncate">{example.title}</h6>
+                                                  <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded ml-2 flex-shrink-0">{example.relevanceScore}% Applicable</span>
+                                                </div>
+                                                <p className="text-xs text-green-700 mb-2 line-clamp-2">{example.significance}</p>
+                                                <div className="flex justify-between items-center mb-2">
+                                                  <span className="text-xs text-green-600">{example.historicalContext}</span>
+                                                  <button
+                                                    onClick={() => setPreviewDocument(example)}
+                                                    className="text-green-600 hover:text-green-800 text-xs underline"
+                                                  >
+                                                    View Records
+                                                  </button>
+                                                </div>
+                                                {/* Relevance Feedback Buttons */}
+                                                {!feedback && (
+                                                  <div className="flex space-x-2 mt-2">
+                                                    <button
+                                                      onClick={() => handleDocumentFeedback(docId, 'relevant', example.title)}
+                                                      className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition-colors"
+                                                    >
+                                                      ✓ Relevant
+                                                    </button>
+                                                    <button
+                                                      onClick={() => handleDocumentFeedback(docId, 'not_relevant', example.title)}
+                                                      className="text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition-colors"
+                                                    >
+                                                      ✗ Not Relevant
+                                                    </button>
+                                                  </div>
+                                                )}
+                                                {feedback === 'relevant' && (
+                                                  <div className="text-xs text-green-700 mt-2 flex items-center">
+                                                    <span className="font-medium">✓ Marked as relevant</span>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Hidden Documents Summary */}
+                                  {hiddenDocuments.size > 0 && (
+                                    <div className="mt-6 pt-4 border-t border-gray-200">
+                                      <div className="bg-gray-50 rounded-lg p-3 mb-4">
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-sm text-gray-700">
+                                            {hiddenDocuments.size} document{hiddenDocuments.size !== 1 ? 's' : ''} marked as not relevant and hidden
+                                          </span>
+                                          <button
+                                            onClick={showAllDocuments}
+                                            className="text-xs text-gray-600 hover:text-gray-800 underline"
+                                          >
+                                            Show All Documents
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Research Again */}
+                                  <div className="mt-6 pt-4 border-t border-gray-200">
+                                    <div className="flex space-x-3">
+                                      <button
+                                        onClick={() => conductHistoricalResearch()}
+                                        className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors flex items-center"
+                                      >
+                                        <RefreshCw className="w-4 h-4 mr-2" />
+                                        Research Again for More Documents
+                                      </button>
+                                      {hiddenDocuments.size > 0 && (
+                                        <button
+                                          onClick={showAllDocuments}
+                                          className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center"
+                                        >
+                                          <Eye className="w-4 h-4 mr-2" />
+                                          Show Hidden Documents
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Brief Structure and Drafting - Step 11 */}
+                          {step.id === 11 && (
+                            <BriefDraftingArea
+                              caseId={currentCaseId || undefined}
+                              caseInformation={caseInformation}
+                              selectedDocuments={selectedDocuments}
+                              documentSummaries={documentSummaries}
+                              justiceAnalysis={justiceAnalysis}
+                              historicalResearch={historicalResearch}
+                              referenceBrief={referenceBrief}
+                              onBriefSaved={(briefData) => {
+                                console.log('✅ Brief saved:', briefData);
+                                debugLog.info('Brief Saved', `Brief saved with ${briefData.metadata.totalWordCount} words`);
+                                
+                                // Show success toast
+                                const toast = document.createElement('div');
+                                toast.textContent = '✅ Brief Saved Successfully!';
+                                toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg z-50 font-medium';
+                                document.body.appendChild(toast);
+                                setTimeout(() => {
+                                  if (document.body.contains(toast)) {
+                                    document.body.removeChild(toast);
+                                  }
+                                }, 3000);
+                              }}
+                            />
+                          )}
+
                           {/* Placeholder for remaining steps */}
-                          {step.id > 4 && (
+                          {step.id > 11 && (
                             <div className="text-center py-8">
                               <Clock className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                               <h3 className="text-lg font-semibold text-gray-700 mb-2">Coming Soon</h3>
@@ -2476,6 +3134,223 @@ export default function WorkflowPage() {
         )}
       </div>
       
+      {/* Enhanced Document Preview Modal with Deep Analysis */}
+      {previewDocument && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-5xl w-full max-h-[95vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">{previewDocument.title}</h3>
+                  <span className="text-green-600 font-bold text-lg">{previewDocument.relevanceScore}% Relevant</span>
+                </div>
+                <button
+                  onClick={() => {
+                    setPreviewDocument(null);
+                    setDocumentAnalysis(null);
+                  }}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Left Column - Basic Information */}
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-semibold text-gray-700 mb-2">Key Quote:</h4>
+                    <blockquote className="italic text-gray-600 border-l-4 border-blue-300 pl-4 bg-blue-50 p-3 rounded">
+                      "{previewDocument.keyQuote}"
+                    </blockquote>
+                  </div>
+                  
+                  <div>
+                    <h4 className="font-semibold text-gray-700 mb-2">Significance:</h4>
+                    <p className="text-gray-600">{previewDocument.significance}</p>
+                  </div>
+                  
+                  <div>
+                    <h4 className="font-semibold text-gray-700 mb-2">Strategic Appeal:</h4>
+                    <p className="text-gray-600">{previewDocument.strategicAppeal || previewDocument.psychologicalAppeal}</p>
+                  </div>
+                  
+                  <div>
+                    <h4 className="font-semibold text-gray-700 mb-2">Archive Location:</h4>
+                    <p className="text-gray-600">{previewDocument.archiveLocation}</p>
+                  </div>
+                  
+                  {previewDocument.historicalContext && (
+                    <div>
+                      <h4 className="font-semibold text-gray-700 mb-2">Historical Context:</h4>
+                      <p className="text-gray-600">{previewDocument.historicalContext}</p>
+                    </div>
+                  )}
+                  
+                  {previewDocument.caseContext && (
+                    <div>
+                      <h4 className="font-semibold text-gray-700 mb-2">Context:</h4>
+                      <p className="text-gray-600">{previewDocument.caseContext}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Column - Deep AI Analysis */}
+                <div className="space-y-4">
+                  <div className="border-l-4 border-purple-300 pl-4">
+                    <h4 className="font-semibold text-purple-700 mb-3 flex items-center">
+                      <Brain className="w-5 h-5 mr-2" />
+                      AI Strategic Analysis
+                    </h4>
+                    
+                    {!documentAnalysis && !isLoadingDocumentAnalysis && (
+                      <div className="text-center">
+                        <button
+                          onClick={() => performDeepDocumentAnalysis(previewDocument)}
+                          className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center mx-auto"
+                        >
+                          <Brain className="w-4 h-4 mr-2" />
+                          Run Deep Analysis
+                        </button>
+                        <p className="text-sm text-gray-500 mt-2">
+                          Performs comprehensive AI analysis including constitutional principles, justice targeting, and strategic insights.
+                        </p>
+                      </div>
+                    )}
+
+                    {isLoadingDocumentAnalysis && (
+                      <div className="text-center py-4">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto"></div>
+                        <p className="text-sm text-gray-600 mt-2">Analyzing document strategically...</p>
+                      </div>
+                    )}
+
+                    {documentAnalysis && !documentAnalysis.error && (
+                      <div className="space-y-4 max-h-96 overflow-y-auto">
+                        {/* Legal Foundation */}
+                        {documentAnalysis.legalFoundation && (
+                          <div>
+                            <h5 className="font-medium text-purple-800 mb-2">Constitutional Principles</h5>
+                            <ul className="text-sm text-gray-700 space-y-1">
+                              {documentAnalysis.legalFoundation.constitutionalPrinciples?.map((principle: string, idx: number) => (
+                                <li key={idx} className="flex items-start">
+                                  <span className="text-purple-600 mr-2">•</span>
+                                  {principle}
+                                </li>
+                              ))}
+                            </ul>
+                            {documentAnalysis.legalFoundation.precedentialValue && (
+                              <p className="text-sm text-gray-600 mt-2 italic">
+                                <strong>Precedential Value:</strong> {documentAnalysis.legalFoundation.precedentialValue}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Justice Targeting */}
+                        {documentAnalysis.specificJusticeTargeting && (
+                          <div>
+                            <h5 className="font-medium text-purple-800 mb-2">Justice Targeting</h5>
+                            {documentAnalysis.specificJusticeTargeting.mostPersuasiveFor && (
+                              <div className="text-sm text-gray-700">
+                                <strong>Most Persuasive For:</strong>
+                                <ul className="mt-1 space-y-1">
+                                  {documentAnalysis.specificJusticeTargeting.mostPersuasiveFor.map((justice: string, idx: number) => (
+                                    <li key={idx} className="ml-4">• {justice}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {documentAnalysis.specificJusticeTargeting.presentationStrategy && (
+                              <p className="text-sm text-gray-600 mt-2">
+                                <strong>Strategy:</strong> {documentAnalysis.specificJusticeTargeting.presentationStrategy}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Strategic Arguments */}
+                        {documentAnalysis.strategicUtility && (
+                          <div>
+                            <h5 className="font-medium text-purple-800 mb-2">Primary Arguments</h5>
+                            <ul className="text-sm text-gray-700 space-y-1">
+                              {documentAnalysis.strategicUtility.primaryArguments?.map((arg: string, idx: number) => (
+                                <li key={idx} className="flex items-start">
+                                  <span className="text-green-600 mr-2">✓</span>
+                                  {arg}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* Persuasion Metrics */}
+                        {documentAnalysis.persuasionMetrics && (
+                          <div>
+                            <h5 className="font-medium text-purple-800 mb-2">Power Rating</h5>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              {documentAnalysis.persuasionMetrics.emotionalResonance && (
+                                <div className="bg-blue-50 p-2 rounded">
+                                  <strong>Emotional:</strong> {documentAnalysis.persuasionMetrics.emotionalResonance}/10
+                                </div>
+                              )}
+                              {documentAnalysis.persuasionMetrics.intellectualRigor && (
+                                <div className="bg-green-50 p-2 rounded">
+                                  <strong>Intellectual:</strong> {documentAnalysis.persuasionMetrics.intellectualRigor}/10
+                                </div>
+                              )}
+                              {documentAnalysis.persuasionMetrics.precedentialWeight && (
+                                <div className="bg-purple-50 p-2 rounded">
+                                  <strong>Precedential:</strong> {documentAnalysis.persuasionMetrics.precedentialWeight}/10
+                                </div>
+                              )}
+                              {documentAnalysis.persuasionMetrics.overallPowerRating && (
+                                <div className="bg-yellow-50 p-2 rounded col-span-2">
+                                  <strong>Overall Power:</strong> {documentAnalysis.persuasionMetrics.overallPowerRating}/10
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Brief Integration */}
+                        {documentAnalysis.briefIntegration && (
+                          <div>
+                            <h5 className="font-medium text-purple-800 mb-2">Brief Integration</h5>
+                            {documentAnalysis.briefIntegration.optimalPlacement && (
+                              <p className="text-sm text-gray-700">
+                                <strong>Placement:</strong> {documentAnalysis.briefIntegration.optimalPlacement}
+                              </p>
+                            )}
+                            {documentAnalysis.briefIntegration.rhetoricalFraming && (
+                              <p className="text-sm text-gray-700 mt-1">
+                                <strong>Framing:</strong> {documentAnalysis.briefIntegration.rhetoricalFraming}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {documentAnalysis?.error && (
+                      <div className="text-red-600 text-sm">
+                        <p><strong>Analysis failed:</strong> {documentAnalysis.details}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-gray-200">
+                <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-700">
+                  <strong>Note:</strong> This is an AI-generated research result. Full document verification through official archives is recommended for legal briefs.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Debug Log Panel */}
       <DebugLogPanel />
     </div>

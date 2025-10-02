@@ -51,12 +51,13 @@ interface SearchResults {
 }
 
 interface CitationResearchProps {
+  caseId?: string | null;
   onDocumentsSelected?: (documents: CaseDocument[]) => void;
   onSummariesGenerated?: (summaries: any[]) => void;
   onDocumentSaved?: (document: CaseDocument) => void;
 }
 
-export default function CitationResearch({ onDocumentsSelected, onSummariesGenerated, onDocumentSaved }: CitationResearchProps) {
+export default function CitationResearch({ caseId, onDocumentsSelected, onSummariesGenerated, onDocumentSaved }: CitationResearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
@@ -66,7 +67,7 @@ export default function CitationResearch({ onDocumentsSelected, onSummariesGener
   const [previewDocument, setPreviewDocument] = useState<CaseDocument | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [searchMode, setSearchMode] = useState<'exact' | 'related' | 'comprehensive'>('comprehensive');
-  const [searchType, setSearchType] = useState<'citation' | 'keywords'>('keywords');
+  const [searchType, setSearchType] = useState<'citation' | 'keywords' | 'docket'>('keywords');
   const [isRealTimeSearch, setIsRealTimeSearch] = useState(true);
   const [showHelp, setShowHelp] = useState(false);
   const [showOnlyWithContent, setShowOnlyWithContent] = useState(false);
@@ -146,9 +147,9 @@ export default function CitationResearch({ onDocumentsSelected, onSummariesGener
       // Get cached content
       const cachedContent = await getCachedDocumentContent(doc);
       
-      // Get current case ID from workflow context or use demo values
-      const currentCaseId = localStorage.getItem('workflow_case_id') || '0ff75224-0d61-497d-ac1b-ffefdb63dba1';
-      const defaultUserId = 'a2871219-533b-485e-9ac6-effcda36a88d';
+      // Get current case ID from props or fallback
+      const currentCaseId = caseId || localStorage.getItem('workflow_case_id') || '0ff75224-0d61-497d-ac1b-ffefdb63dba1';
+      const defaultUserId = '017e743d-d079-4a79-a842-54e93d6b64e5'; // System user ID (matches transcribe-direct API)
       
       console.log(`📂 Auto-saving to case: ${currentCaseId}`);
 
@@ -215,9 +216,9 @@ export default function CitationResearch({ onDocumentsSelected, onSummariesGener
       return;
     }
 
-    // For now, we'll need case ID and user ID - these would come from props or context
-    const defaultCaseId = 'demo-case-id'; // Replace with actual case ID
-    const defaultUserId = 'demo-user-id'; // Replace with actual user ID from auth
+    // Get case ID from props or fallback
+    const currentCaseId = caseId || localStorage.getItem('workflow_case_id') || 'demo-case-id';
+    const defaultUserId = '017e743d-d079-4a79-a842-54e93d6b64e5'; // System user ID (matches transcribe-direct API)
 
     setIsSavingDocuments(true);
 
@@ -254,7 +255,7 @@ export default function CitationResearch({ onDocumentsSelected, onSummariesGener
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             document: doc,
-            caseId: defaultCaseId,
+            caseId: currentCaseId,
             userId: defaultUserId,
             fullText: fullText
           })
@@ -457,28 +458,44 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
       const looksLikeCitation = queryText.includes('v.') && 
                                /\d+/.test(queryText) && 
                                queryText.length > 10;
+      // Auto-detect if it looks like a docket number
+      const looksLikeDocket = /^[\w\-\s]*\d+[\w\-\s]*$/i.test(queryText) && 
+                             !queryText.includes('v.') &&
+                             queryText.length < 50;
+      
       if (looksLikeCitation) {
         actualSearchType = 'citation';
+      } else if (looksLikeDocket) {
+        actualSearchType = 'docket';
       }
     }
 
     setIsSearching(true);
     try {
       // Use different endpoints based on search type
-      const endpoint = actualSearchType === 'citation' 
-        ? '/api/legal/research-citation'
-        : '/api/legal/research-keywords';
+      let endpoint = '/api/legal/research-keywords'; // default
+      let requestBody: any = { 
+        query: queryText,
+        searchMode: searchMode,
+        searchType: actualSearchType
+      };
+
+      if (actualSearchType === 'citation') {
+        endpoint = '/api/legal/research-citation';
+      } else if (actualSearchType === 'docket') {
+        endpoint = '/api/legal/research-docket';
+        requestBody = {
+          docketNumber: queryText,
+          searchMode: searchMode
+        };
+      }
       
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          query: queryText,
-          searchMode: searchMode,
-          searchType: actualSearchType
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (response.ok) {
@@ -685,6 +702,17 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
                 />
                 <span className="text-sm font-medium text-gray-700">📚 Citations</span>
               </label>
+              <label className="flex items-center space-x-2">
+                <input
+                  type="radio"
+                  name="searchType"
+                  value="docket"
+                  checked={searchType === 'docket'}
+                  onChange={(e) => setSearchType(e.target.value as any)}
+                  className="text-blue-600"
+                />
+                <span className="text-sm font-medium text-gray-700">📋 Docket</span>
+              </label>
               
               {/* Help Tooltip */}
               <div className="ml-auto">
@@ -710,7 +738,9 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
                   placeholder={
                     searchType === 'keywords' 
                       ? "e.g., religious freedom, Miller, constitutional law..."
-                      : "e.g., Miller v. McDonald, 944 F.3d 1050"
+                      : searchType === 'citation'
+                      ? "e.g., Miller v. McDonald, 944 F.3d 1050"
+                      : "e.g., 24-681, No. 21-CV-1234, 1:20-cv-12345"
                   }
                   className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
                 />
@@ -811,7 +841,8 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
                 <div>
                   <div className="mb-3">
                     <strong>
-                      {searchType === 'keywords' ? '🔍 Keyword Examples:' : '📚 Citation Examples:'}
+                      {searchType === 'keywords' ? '🔍 Keyword Examples:' : 
+                       searchType === 'citation' ? '📚 Citation Examples:' : '📋 Docket Examples:'}
                     </strong>
                     <div className="mt-1 space-y-1">
                       {searchType === 'keywords' ? (
@@ -821,11 +852,18 @@ For the foregoing reasons, this court finds that [legal conclusion]. The judgmen
                           <div className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">Supreme Court</div>
                           <div className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">civil rights</div>
                         </>
-                      ) : (
+                      ) : searchType === 'citation' ? (
                         <>
                           <div className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">Brown v. Board, 347 U.S. 483</div>
                           <div className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">Roe v. Wade, 410 U.S. 113</div>
                           <div className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">Miranda v. Arizona, 384 U.S. 436</div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">24-681</div>
+                          <div className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">No. 21-CV-1234</div>
+                          <div className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">1:20-cv-12345</div>
+                          <div className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">Case 2:19-cv-00123</div>
                         </>
                       )}
                     </div>

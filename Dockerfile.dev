@@ -1,0 +1,28 @@
+# Development Dockerfile - no build, just run dev server
+FROM node:18-alpine
+
+# Install Python and build tools for native dependencies
+RUN apk add --no-cache libc6-compat python3 make g++ py3-pip
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Expose port
+EXPOSE 4000
+
+# Set environment
+ENV NODE_ENV=development
+ENV PORT=4000
+ENV HOSTNAME="0.0.0.0"
+
+# Run development server
+CMD ["npm", "run", "dev"]

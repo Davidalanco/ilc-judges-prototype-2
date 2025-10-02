@@ -218,10 +218,10 @@ export async function POST(request: NextRequest) {
       try {
         // Create a real case using an existing user ID from the database
         const newCase = await db.createCase({
-          user_id: '37dc83ba-123b-4c86-9c61-903c085193a0', // Use existing user from DB
+          user_id: '318ce256-20b4-458e-a29b-ef7a39a8d570', // dave@5k.co user ID
+          title: `Case - ${file.name}`, // Required field
           case_name: `Case - ${file.name}`,
-          case_type: 'constitutional',
-          court_level: 'supreme'
+          case_type: 'constitutional'
         });
         
         actualCaseId = newCase.id;
@@ -298,10 +298,10 @@ export async function POST(request: NextRequest) {
             const { extractCaseInformation } = await import('@/lib/ai/case-analyzer');
             const caseInfo = await extractCaseInformation(transcriptionResult.text);
             
-            // Update the case with extracted information
+            // Update the case with extracted information  
             await db.updateCase(actualCaseId, {
               case_name: caseInfo.case_name,
-              court_level: caseInfo.court_level,
+              case_type: caseInfo.court_level, // Store court level in case_type field
               constitutional_question: caseInfo.constitutional_question,
               penalties: caseInfo.penalties,
               precedent_target: caseInfo.precedent_target
@@ -310,7 +310,7 @@ export async function POST(request: NextRequest) {
             logDbOp('TranscribeDirect', 'Case information automatically extracted and updated', {
               caseId: actualCaseId,
               caseName: caseInfo.case_name,
-              courtLevel: caseInfo.court_level,
+              constitutionalQuestion: caseInfo.constitutional_question,
               extractedFields: Object.keys(caseInfo).length
             });
           } catch (caseAnalysisError) {
